@@ -1,3 +1,7 @@
+# The dsh-plugin-guard bundle patch: one insert over the profile's layer stack.
+# `id` is the stable DSH plugin id (it must match the client bundle's
+# __ModuleLoader__ registration id); `name` is the bare module specifier the
+# Loader imports, i.e. this package's npm name.
 - insert:
     - id: dsh-plugin-guard
-      name: dsh-plugin-guard
+      name: '@guojin-ai/dsh-plugin-guard'

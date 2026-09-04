@@ -26,17 +26,15 @@
 
 ## 安装
 
-npm 包名：`@guojin-ai/dsh-plugin-guard`（DSH 内部的插件 id 仍为 `dsh-plugin-guard`）；清单见 `dsh.plugin.json`（入口注入 `typert / llm / agentDefaultModel`，客户端平台 `web`）。
+npm 包名：`@guojin-ai/dsh-plugin-guard`；DSH 内部插件 id 为 `dsh-plugin-guard`。它同时声明了三处装载契约：`package.json` `dsh.bundle.patch`（指向 `cordis.patch.yml`，插入主机端插件行）、`dsh.client`（`platform: web` + `./client` 浏览器 bundle）、以及 `main`/`exports`（`lib/index.js` / `lib/client.js`）。
 
-把它装进你要审计的 profile（`$DSH_HOME/profiles/<profile>`）即可：
+用 DSH 自带的插件命令把包装进你要审计的 profile（`$DSH_HOME/profiles/<profile>`）：
 
 ```bash
-# pnpm
-pnpm add @guojin-ai/dsh-plugin-guard
-
-# 或 npm
-npm install @guojin-ai/dsh-plugin-guard
+dsh plugin --profile <name> add @guojin-ai/dsh-plugin-guard
 ```
+
+`dsh plugin` 会转发给 pnpm 在该 profile 目录内安装，并把声明了 `dsh.bundle` 的包自动纳入该 profile 的组合层（需要机器上有 `pnpm`）。
 
 > 仓库已提交构建产物 `lib/`（`lib/index.js` 为主机端 ESM、`lib/client.js` 为客户端 bundle，`lib/types/` 为对应 `.d.ts`），因此**无需重新构建**即可被加载器直接装载。若想自行构建可参考下方「开发」一节。
 
