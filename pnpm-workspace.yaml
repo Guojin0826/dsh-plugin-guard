@@ -1,0 +1,11 @@
+# pnpm workspace configuration for dsh-plugin-guard.
+#
+# The `packages` field is intentionally omitted: this is a single-package
+# project, so only the root package belongs to the workspace.
+#
+# `esbuild` ships its platform binary through optionalDependencies, but its
+# `postinstall` also verifies/sets up the local binary. Allow that one build
+# script explicitly (pnpm blocks dependency scripts by default).
+
+allowBuilds:
+  esbuild: true
