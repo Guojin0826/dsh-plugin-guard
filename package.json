@@ -10,11 +10,11 @@
   "author": "dsh-plugin-guard contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/owner/dsh-plugin-guard.git"
+    "url": "git+https://github.com/Guojin0826/dsh-plugin-guard.git"
   },
-  "homepage": "https://github.com/owner/dsh-plugin-guard#readme",
+  "homepage": "https://github.com/Guojin0826/dsh-plugin-guard#readme",
   "bugs": {
-    "url": "https://github.com/owner/dsh-plugin-guard/issues"
+    "url": "https://github.com/Guojin0826/dsh-plugin-guard/issues"
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

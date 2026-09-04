@@ -152,7 +152,7 @@ npm publish
 
 发布 GitHub Release：推送一个 `v*` 标签（如 `v0.1.0`），`.github/workflows/release.yml` 会自动构建、`npm publish`（带 provenance）并创建 GitHub Release。
 
-> 说明：`package.json` 中的 `repository` / `homepage` / `bugs` 目前使用占位符仓库 `owner/dsh-plugin-guard`，发布前请替换为你的真实 `owner/repo`。
+> 仓库地址：<https://github.com/Guojin0826/dsh-plugin-guard>。
 
 ## 局限与免责
 
