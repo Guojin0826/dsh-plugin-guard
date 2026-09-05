@@ -1,7 +1,7 @@
 {
   "name": "@guojin-ai/dsh-plugin-guard",
   "description": "Plugin security inspector for the DeepSeek Harness web GUI: statically audits installed plugins (dangerous API patterns + dependency review), layers an AI (default-model) online audit, and renders a green/yellow/red report panel.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
