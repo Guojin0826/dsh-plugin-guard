@@ -173,8 +173,6 @@ export interface ReputationEvidence {
   npmModified: string
   /** Weekly npm downloads; -1 when unknown. */
   weeklyDownloads: number
-  /** Flattened web-search result lines (title + snippet), empty when none. */
-  searchResults: string
   /** Structured web-search hits from the malicious/attack-report lookup (title/url/snippet). */
   webSearchHits: WebSearchHit[]
   /** Known vulnerability / malicious-package advisories from OSV.dev (authoritative, keyless). */
@@ -243,7 +241,6 @@ export const reputationEvidenceSchema = z.object({
   npmCreated: z.string(),
   npmModified: z.string(),
   weeklyDownloads: z.number(),
-  searchResults: z.string(),
   webSearchHits: z.array(webSearchHitSchema),
   advisories: z.array(advisoryFindingSchema),
   github: githubEvidenceSchema,

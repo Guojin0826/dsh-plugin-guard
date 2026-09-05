@@ -158,9 +158,6 @@ function buildUserPrompt(
       lines.push(`- ${head}${urlPart}`)
       if (hit.snippet !== '') lines.push(`    ${hit.snippet}`)
     }
-  } else if (reputation.searchResults !== '') {
-    lines.push('- 搜索结果(文本):')
-    lines.push(reputation.searchResults)
   } else {
     lines.push('- (未检索到与该插件直接相关的互联网恶意/攻击报告)')
   }
@@ -480,7 +477,7 @@ function isRelevantHit(hit: RawHit, needles: string[]): boolean {
  * into a compact text summary for the model. Never throws — a blocked engine
  * only degrades to fewer (or no) hits.
  */
-async function searchMaliciousReports(pluginName: string): Promise<{ hits: WebSearchHit[]; summary: string }> {
+async function searchMaliciousReports(pluginName: string): Promise<WebSearchHit[]> {
   const queries = [
     `${JSON.stringify(pluginName)} npm malicious OR malware OR backdoor OR compromised`,
     `${JSON.stringify(pluginName)} npm 恶意 OR 后门 OR 供应链攻击`,
@@ -514,20 +511,9 @@ async function searchMaliciousReports(pluginName: string): Promise<{ hits: WebSe
     if (collected.size < 10) await new Promise(resolve => setTimeout(resolve, 350))
   }
 
-  const hits = [...collected.values()]
-  if (hits.length === 0) {
-    // No hit genuinely tied to this plugin + a malicious/attack term: report
-    // "none" rather than surfacing unrelated search noise to the model/panel.
-    return { hits: [], summary: '' }
-  }
-  const summary = hits
-    .map(hit => {
-      const head = hit.title !== '' ? hit.title : hit.url
-      const urls = hit.url !== '' && hit.title !== '' ? `（${hit.url}）` : ''
-      return `- ${head}${urls}${hit.snippet !== '' ? ` — ${hit.snippet}` : ''}`
-    })
-    .join('\n')
-  return { hits, summary }
+  // No hit genuinely tied to this plugin + a malicious/attack term: report
+  // "none" rather than surfacing unrelated search noise to the model/panel.
+  return [...collected.values()]
 }
 
 /** Best-effort parse of `owner/repo` from the many shapes a package.json repository url takes. */
@@ -599,27 +585,29 @@ function resolvePluginRepo(
   return { url: '', fromOwnContent: false }
 }
 
+/** Zero-valued GithubEvidence: every lookup starts from this and fills what it can. */
+const EMPTY_GITHUB: GithubEvidence = {
+  fullName: '',
+  htmlUrl: '',
+  description: '',
+  stars: -1,
+  forks: -1,
+  archived: false,
+  createdAt: '',
+  pushedAt: '',
+  ownerCreatedAt: '',
+  ownerPublicRepos: -1,
+  ownerFollowers: -1,
+  note: '',
+}
+
 /** Fetch repo + owner info from the GitHub REST API; never throws, degrades to note. */
 async function lookupGithubRepo(repositoryUrl: string, githubToken: string, fromOwnContent: boolean): Promise<GithubEvidence> {
-  const empty: GithubEvidence = {
-    fullName: '',
-    htmlUrl: '',
-    description: '',
-    stars: -1,
-    forks: -1,
-    archived: false,
-    createdAt: '',
-    pushedAt: '',
-    ownerCreatedAt: '',
-    ownerPublicRepos: -1,
-    ownerFollowers: -1,
-    note: '',
-  }
   const parsed = parseGithubRepo(repositoryUrl)
-  if (parsed === null) return { ...empty, note: '未解析到 GitHub 仓库地址' }
+  if (parsed === null) return { ...EMPTY_GITHUB, note: '未解析到 GitHub 仓库地址' }
   const { owner, repo } = parsed
   const github: GithubEvidence = {
-    ...empty,
+    ...EMPTY_GITHUB,
     fullName: `${owner}/${repo}`,
     htmlUrl: `https://github.com/${owner}/${repo}`,
   }
@@ -699,20 +687,6 @@ async function lookupOsvAdvisories(pluginName: string): Promise<AdvisoryFinding[
 
 /** npm registry + download stats + OSV advisories + a web search, run in parallel with graceful degradation. */
 async function lookupPluginReputation(pluginName: string): Promise<ReputationEvidence> {
-  const emptyGithub: GithubEvidence = {
-    fullName: '',
-    htmlUrl: '',
-    description: '',
-    stars: -1,
-    forks: -1,
-    archived: false,
-    createdAt: '',
-    pushedAt: '',
-    ownerCreatedAt: '',
-    ownerPublicRepos: -1,
-    ownerFollowers: -1,
-    note: '',
-  }
   const context: ReputationEvidence = {
     npmDescription: '',
     npmLatest: '',
@@ -722,10 +696,9 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
     npmCreated: '',
     npmModified: '',
     weeklyDownloads: -1,
-    searchResults: '',
     webSearchHits: [],
     advisories: [],
-    github: emptyGithub,
+    github: EMPTY_GITHUB,
     note: '',
   }
   const notes: string[] = []
@@ -777,8 +750,7 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
   }
 
   if (searchResult.status === 'fulfilled') {
-    context.searchResults = searchResult.value.summary
-    context.webSearchHits = searchResult.value.hits
+    context.webSearchHits = searchResult.value
   }
 
   if (advisoryResult.status === 'fulfilled') context.advisories = advisoryResult.value
@@ -838,7 +810,7 @@ export async function auditPluginWithAi(
 
   const repute = reputation.npmDescription !== ''
     ? `npm: ${reputation.npmDescription.slice(0, 60)}`
-    : `npm 未收录，搜索命中 ${reputation.searchResults === '' ? 0 : '若干'}条`
+    : `npm 未收录，搜索命中 ${reputation.webSearchHits.length === 0 ? 0 : '若干'}条`
   emit('researching', `声誉查询完成（${repute}；${githubSummary}）`)
 
   const llmCall = (callMessages: unknown[]): Promise<string> => runLlmText(guardCtx, {

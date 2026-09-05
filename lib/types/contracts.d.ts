@@ -216,8 +216,6 @@ export interface ReputationEvidence {
     npmModified: string;
     /** Weekly npm downloads; -1 when unknown. */
     weeklyDownloads: number;
-    /** Flattened web-search result lines (title + snippet), empty when none. */
-    searchResults: string;
     /** Structured web-search hits from the malicious/attack-report lookup (title/url/snippet). */
     webSearchHits: WebSearchHit[];
     /** Known vulnerability / malicious-package advisories from OSV.dev (authoritative, keyless). */
@@ -293,7 +291,6 @@ export declare const reputationEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     npmCreated: z.ZodString;
     npmModified: z.ZodString;
     weeklyDownloads: z.ZodNumber;
-    searchResults: z.ZodString;
     webSearchHits: z.ZodArray<z.ZodReadonly<z.ZodObject<{
         title: z.ZodString;
         url: z.ZodString;
@@ -350,7 +347,6 @@ export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
         npmCreated: z.ZodString;
         npmModified: z.ZodString;
         weeklyDownloads: z.ZodNumber;
-        searchResults: z.ZodString;
         webSearchHits: z.ZodArray<z.ZodReadonly<z.ZodObject<{
             title: z.ZodString;
             url: z.ZodString;

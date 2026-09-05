@@ -417,5 +417,3 @@ export function runAudit(profileDir: string, maxScanFiles: number): SecurityRepo
     plugins,
   }
 }
-
-export { DANGER_RULES, SEVERITY_SCORE, isNonRegistrySpec }

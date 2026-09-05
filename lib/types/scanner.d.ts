@@ -1,16 +1,4 @@
 import type { SecurityReport, Severity } from './contracts.ts';
-interface DangerRule {
-    code: string;
-    severity: Severity;
-    label: string;
-    /** Global regex; matched against one file's text at a time. */
-    re: RegExp;
-}
-/** Static danger rules, weighted by severity. */
-declare const DANGER_RULES: DangerRule[];
-declare const SEVERITY_SCORE: Record<Severity, number>;
-/** Dep specs that bypass the npm registry provenance chain. */
-declare function isNonRegistrySpec(spec: string): boolean;
 /** One extracted source line that matched a danger rule, for AI-audit evidence. */
 export interface EvidenceSnippet {
     /** Plugin-relative file path. */
@@ -58,4 +46,3 @@ export interface PluginMetadata {
 export declare function collectPluginMetadata(pluginDir: string): PluginMetadata;
 /** Run a full audit over one profile directory (contains package.json + node_modules). */
 export declare function runAudit(profileDir: string, maxScanFiles: number): SecurityReport;
-export { DANGER_RULES, SEVERITY_SCORE, isNonRegistrySpec };

@@ -1,6 +1,7 @@
 # dependencies
 node_modules/
 .pnpm-store/
+.npm-cache/
 
 # build output is intentionally committed (lib/ ships as the plugin bundle)
 # so it is NOT ignored here.

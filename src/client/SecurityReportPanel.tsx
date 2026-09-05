@@ -153,23 +153,10 @@ function WebReportsBox({ reputation, t }: { reputation: ReputationEvidence; t: (
   const hits = reputation.webSearchHits ?? []
   const heading = <div style={{ fontWeight: 600 }}>{t('aiWebReports')}</div>
   if (hits.length === 0) {
-    const searchLines = (reputation.searchResults ?? '').split('\n').map(line => line.trim()).filter(line => line !== '')
-    if (searchLines.length === 0) {
-      return (
-        <div style={{ marginTop: 6 }}>
-          {heading}
-          <div style={{ color: palette.mute }}>{t('aiWebNoReports')}</div>
-        </div>
-      )
-    }
     return (
       <div style={{ marginTop: 6 }}>
         {heading}
-        <ul style={{ margin: '3px 0 0', paddingLeft: 18 }}>
-          {searchLines.map((line, index) => (
-            <li key={index} style={{ margin: '2px 0', wordBreak: 'break-all' }}>{line.replace(/^- /, '')}</li>
-          ))}
-        </ul>
+        <div style={{ color: palette.mute }}>{t('aiWebNoReports')}</div>
       </div>
     )
   }
