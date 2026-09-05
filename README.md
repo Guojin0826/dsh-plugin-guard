@@ -4,6 +4,8 @@
 >
 > Plugin security inspector for the DeepSeek Harness web GUI: statically audits installed plugins (dangerous API patterns + dependency review), then layers an AI (default-model) audit on top, rendered as a green / yellow / red report panel.
 
+中文 | [English](README.en.md)
+
 ## 这是什么
 
 `dsh-plugin-guard` 是 DeepSeek Harness（DSH）Web GUI 的一款**插件安全体检**插件。它在**不执行插件代码**的前提下，读取已安装第三方插件的源码与元数据，帮你判断「装上的这个插件到底在做什么、是否超出了它自称的功能范围、风险有多高」，最后给出一份绿 / 黄 / 红三级的报告。
