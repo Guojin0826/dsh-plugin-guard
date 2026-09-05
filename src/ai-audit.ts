@@ -215,15 +215,30 @@ function buildUserPrompt(
 }
 
 /**
- * Strip markdown fences (case-insensitive ```json / ```) and extract the first
- * balanced `{...}` object from raw model text. Models wrap JSON in fences,
- * prefix reasoning, or append prose; this pulls just the object out and parses
- * it, with the raw output trimmed into the error for diagnosis.
+ * Remove complete reasoning/thinking blocks that reasoning models emit BEFORE
+ * the answer (` thinking…`, `<thinking>`, `<reasoning>`, `<scratchpad>`). Their
+ * prose often contains a draft `{…}` (with trailing commas or half-written
+ * fields) that would otherwise be mistaken for the result, so strip them before
+ * locating the real JSON object.
+ */
+function stripReasoningBlocks(text: string): string {
+  return text
+    .replace(/ thinking[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, ' ')
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, ' ')
+    .replace(/<scratchpad>[\s\S]*?<\/scratchpad>/gi, ' ')
+}
+
+/**
+ * Strip reasoning blocks + markdown fences (case-insensitive ```json / ```) and
+ * extract the first balanced `{...}` object from raw model text. Models wrap
+ * JSON in fences, prefix reasoning, or append prose; this pulls just the object
+ * out and parses it, with the raw output trimmed into the error for diagnosis.
  */
 function parseJsonObject(text: string): unknown {
   const trimmed = text.trim()
   const snippet = trimmed.slice(0, 300)
-  let body = trimmed
+  let body = stripReasoningBlocks(trimmed)
   const fence = body.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
   if (fence !== null) body = fence[1].trim()
   const start = body.indexOf('{')
