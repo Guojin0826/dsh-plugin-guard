@@ -185,6 +185,26 @@ export interface GithubEvidence {
     /** Human-readable lookup failures (rate limit etc.). */
     note: string;
 }
+/** One web-search hit gathered while looking for reports of a plugin being malicious. */
+export interface WebSearchHit {
+    readonly title: string;
+    /** Result URL (http/https only; empty when the engine did not expose one). */
+    readonly url: string;
+    /** Search-engine snippet describing the result. */
+    readonly snippet: string;
+}
+/** One known-advisory record (vulnerability or malicious-package report) from OSV.dev. */
+export interface AdvisoryFinding {
+    /** Advisory id, e.g. `GHSA-…` or `MAL-2025-…`. */
+    readonly id: string;
+    readonly summary: string;
+    /** True when the entry is explicitly a malicious-code report (id prefix `MAL-` or "malicious" summary). */
+    readonly malicious: boolean;
+    /** Cross-referenced CVE/GHSA ids. */
+    readonly aliases: string[];
+    /** Advisory source label, e.g. `OSV.dev`. */
+    readonly source: string;
+}
 /** Internet-reputation evidence gathered for the model, returned verbatim with the verdict. */
 export interface ReputationEvidence {
     npmDescription: string;
@@ -196,8 +216,12 @@ export interface ReputationEvidence {
     npmModified: string;
     /** Weekly npm downloads; -1 when unknown. */
     weeklyDownloads: number;
-    /** Web-search result lines (DuckDuckGo), empty when none. */
+    /** Flattened web-search result lines (title + snippet), empty when none. */
     searchResults: string;
+    /** Structured web-search hits from the malicious/attack-report lookup (title/url/snippet). */
+    webSearchHits: WebSearchHit[];
+    /** Known vulnerability / malicious-package advisories from OSV.dev (authoritative, keyless). */
+    advisories: AdvisoryFinding[];
     /** GitHub repo + owner evidence. */
     github: GithubEvidence;
     /** Human-readable lookup failures, e.g. "npm 未收录该包名". */
@@ -248,6 +272,18 @@ export declare const githubEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     ownerFollowers: z.ZodNumber;
     note: z.ZodString;
 }, z.core.$strip>>;
+export declare const webSearchHitSchema: z.ZodReadonly<z.ZodObject<{
+    title: z.ZodString;
+    url: z.ZodString;
+    snippet: z.ZodString;
+}, z.core.$strip>>;
+export declare const advisoryFindingSchema: z.ZodReadonly<z.ZodObject<{
+    id: z.ZodString;
+    summary: z.ZodString;
+    malicious: z.ZodBoolean;
+    aliases: z.ZodArray<z.ZodString>;
+    source: z.ZodString;
+}, z.core.$strip>>;
 export declare const reputationEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     npmDescription: z.ZodString;
     npmLatest: z.ZodString;
@@ -258,6 +294,18 @@ export declare const reputationEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     npmModified: z.ZodString;
     weeklyDownloads: z.ZodNumber;
     searchResults: z.ZodString;
+    webSearchHits: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        title: z.ZodString;
+        url: z.ZodString;
+        snippet: z.ZodString;
+    }, z.core.$strip>>>;
+    advisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        id: z.ZodString;
+        summary: z.ZodString;
+        malicious: z.ZodBoolean;
+        aliases: z.ZodArray<z.ZodString>;
+        source: z.ZodString;
+    }, z.core.$strip>>>;
     github: z.ZodReadonly<z.ZodObject<{
         fullName: z.ZodString;
         htmlUrl: z.ZodString;
@@ -303,6 +351,18 @@ export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
         npmModified: z.ZodString;
         weeklyDownloads: z.ZodNumber;
         searchResults: z.ZodString;
+        webSearchHits: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+            title: z.ZodString;
+            url: z.ZodString;
+            snippet: z.ZodString;
+        }, z.core.$strip>>>;
+        advisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+            id: z.ZodString;
+            summary: z.ZodString;
+            malicious: z.ZodBoolean;
+            aliases: z.ZodArray<z.ZodString>;
+            source: z.ZodString;
+        }, z.core.$strip>>>;
         github: z.ZodReadonly<z.ZodObject<{
             fullName: z.ZodString;
             htmlUrl: z.ZodString;

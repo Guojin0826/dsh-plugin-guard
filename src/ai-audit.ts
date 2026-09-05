@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { collectEvidence, collectPluginMetadata, type EvidenceSnippet, type PluginMetadata } from './scanner.ts'
 import {
   aiAssessmentSchema,
+  type AdvisoryFinding,
   type AiAssessment,
   type AiAuditResult,
   type AuditPhase,
@@ -21,6 +22,7 @@ import {
   type PluginAudit,
   type ReputationEvidence,
   type RiskLevel,
+  type WebSearchHit,
 } from './contracts.ts'
 
 /** Minimal callable faces; the module stays independent of exact package types. */
@@ -81,7 +83,8 @@ const SYSTEM_PROMPT = [
   '- 例如：自称"文件管理器 / 终端工具 / 代码执行器 / 爬虫"的插件读写文件、执行命令、发网络请求是它的合理本职，不应仅因此判为恶意。',
   '- 只有当能力明显超出自称功能，且指向数据外传、凭据窃取、后门、挖矿、勒索、隐蔽联网回传等恶意目的时，才判 "malicious"。',
   '- 若能力与功能基本一致、仅实现上值得警惕（如命令拼接、硬编码外联地址），给出 "suspicious" 及具体复核建议。',
-  '- 互联网声誉只作为佐证：知名维护者 / 大量下载 / 正常仓库 / 中立搜索结果可降低疑点；无名新包、混淆代码、可疑安装脚本、负面搜索命中则提高疑点。声誉信息缺失时不臆造。',
+  '- 互联网声誉只作为佐证：知名维护者 / 大量下载 / 正常仓库 / 中立搜索结果可降低疑点；无名新包、混淆代码、可疑安装脚本则提高疑点。尤其「互联网恶意/攻击报告检索」若命中"该插件被举报为恶意 / malware / trojan / backdoor / 供应链攻击 / 后门 / 挖矿"等明确指控，应显著提高判为 "malicious" 或 "suspicious" 的权重；但这些指控也可能是误报、竞品抹黑或营销内容，需结合命中来源的可信度（安全厂商 / 官方公告 / 可信开发者 / 社区讨论）综合判断，不要把单一负面命中直接等同于恶意。声誉信息缺失时不臆造。',
+  '- 「已知漏洞/恶意库记录（OSV.dev）」是权威信号：若出现 [恶意] 标记（MAL- 前缀或 "Malicious code/package" 摘要），说明该包已被官方恶意包数据库收录，应强烈倾向判为 "malicious"；若只是普通漏洞（ReDoS、注入等非恶意条目），则作为 "suspicious" 的佐证，并在 recommendations 中给出升级/加固建议；无收录不代表安全。',
   '- GitHub 仓库信号（若提供）：作者账号刚注册、公开仓库极少、仓库极新却 star 异常偏高、或 npm 包与仓库内容明显不符，都是仿冒/钓鱼/刷星的信号，应提高疑点；反之老账号、多仓库、star 与活跃度匹配则降低疑点。注意"短时间内 star 不合理暴涨"与"无其他仓库的新号作者"组合尤其可疑。',
   '',
   '判定标准：',
@@ -129,13 +132,38 @@ function buildUserPrompt(
   lines.push(`- npm 首次发布: ${reputation.npmCreated || '(未知)'}`)
   lines.push(`- npm 最近更新: ${reputation.npmModified || '(未知)'}`)
   lines.push(`- 周下载量: ${reputation.weeklyDownloads >= 0 ? String(reputation.weeklyDownloads) : '(未知)'}`)
-  if (reputation.searchResults !== '') {
-    lines.push('- 搜索结果:')
+  if (reputation.note !== '') lines.push(`- 声誉查询备注: ${reputation.note}`)
+  lines.push('')
+
+  lines.push('【已知漏洞/恶意库记录（OSV.dev，权威）】（该包被公开收录的漏洞 / 恶意报告）')
+  if (reputation.advisories.length > 0) {
+    const maliciousCount = reputation.advisories.filter(item => item.malicious).length
+    lines.push(`- 共 ${reputation.advisories.length} 条，其中明确"恶意代码/恶意包" ${maliciousCount} 条：`)
+    for (const advisory of reputation.advisories) {
+      const tag = advisory.malicious ? '[恶意]' : '[漏洞]'
+      const aliases = advisory.aliases.length > 0 ? `（${advisory.aliases.join(', ')}）` : ''
+      lines.push(`- ${tag} ${advisory.id}${aliases}: ${advisory.summary}`)
+    }
+  } else {
+    lines.push('- (OSV.dev 无收录，或查询不可达)')
+  }
+  lines.push('')
+
+  lines.push('【互联网恶意/攻击报告检索】（针对"该插件是否为恶意插件"的搜索命中）')
+  if (reputation.webSearchHits.length > 0) {
+    lines.push(`- 命中 ${reputation.webSearchHits.length} 条：`)
+    for (const hit of reputation.webSearchHits.slice(0, 8)) {
+      const head = hit.title !== '' ? hit.title : hit.url
+      const urlPart = hit.url !== '' && hit.title !== '' ? ` <${hit.url}>` : ''
+      lines.push(`- ${head}${urlPart}`)
+      if (hit.snippet !== '') lines.push(`    ${hit.snippet}`)
+    }
+  } else if (reputation.searchResults !== '') {
+    lines.push('- 搜索结果(文本):')
     lines.push(reputation.searchResults)
   } else {
-    lines.push('- 搜索结果: (无)')
+    lines.push('- (未检索到与该插件直接相关的互联网恶意/攻击报告)')
   }
-  if (reputation.note !== '') lines.push(`- 声誉查询备注: ${reputation.note}`)
   lines.push('')
 
   const github = reputation.github
@@ -307,49 +335,199 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, ' ')
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+
+/** Decode HTML entities common to search-result snippets (named + numeric), so the model reads clean text. */
+function decodeEntities(text: string): string {
+  return text
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
+    .replace(/&quot;|&#34;/g, '"')
     .replace(/&#x27;|&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+    .replace(/&nbsp;|&ensp;|&emsp;|&thinsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_match, code: string) => {
+      const value = Number(code)
+      return value >= 32 && value < 0xd800 ? String.fromCodePoint(value) : ' '
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_match, code: string) => {
+      const value = parseInt(code, 16)
+      return value >= 32 && value < 0xd800 ? String.fromCodePoint(value) : ' '
+    })
 }
 
-/** Best-effort DuckDuckGo HTML scrape: extract up to ~5 result titles + snippets. Never throws. */
-async function searchReputation(pluginName: string): Promise<string> {
-  const query = `${JSON.stringify(pluginName)} plugin security OR malicious OR malware OR vulnerability`
+function stripHtml(html: string): string {
+  return decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()
+}
+
+/** One parsed search-engine result before dedupe/cap. */
+interface RawHit {
+  title: string
+  url: string
+  snippet: string
+}
+
+/** Keep a URL only when it is http(s); otherwise return '' (rendered as plain text downstream). */
+function sanitizeUrl(raw: string): string {
+  const url = raw.trim().replace(/&amp;/g, '&')
+  return /^https?:\/\//i.test(url) ? url : ''
+}
+
+/** Extract title/url/snippet from one Bing `b_algo` result block. */
+function parseBingBlock(block: string): RawHit {
+  const anchor = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/)
+  const title = stripHtml(anchor?.[2] ?? '')
+  const url = sanitizeUrl(anchor?.[1] ?? '')
+  const paragraph = block.match(/<p[^>]*>([\s\S]*?)<\/p>/)
+  const snippet = stripHtml(paragraph?.[1] ?? '')
+  return { title, url, snippet }
+}
+
+/** One Bing query; empty on any failure (best-effort). */
+async function searchBing(query: string): Promise<RawHit[]> {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=10&setlang=zh-hans`
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: { 'user-agent': BROWSER_UA, 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8' },
+  })
+  if (!response.ok) return []
+  const html = await response.text()
+  return html
+    .split('<li class="b_algo"')
+    .slice(1)
+    .map(parseBingBlock)
+    .filter(hit => hit.title !== '' || hit.url !== '' || hit.snippet !== '')
+    .slice(0, 8)
+}
+
+/** Decode DuckDuckGo's `uddg=` redirect back to the destination URL. */
+function decodeDdgUrl(href: string): string {
+  const match = href.match(/uddg=([^&]+)/)
+  if (match === null) return ''
+  try {
+    return sanitizeUrl(decodeURIComponent(match[1] ?? ''))
+  } catch {
+    return ''
+  }
+}
+
+/** DuckDuckGo HTML fallback for hosts where Bing is unreachable; empty on failure. */
+async function searchDuckDuckGo(query: string): Promise<RawHit[]> {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
   const response = await fetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: {
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-      'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-    },
+    headers: { 'user-agent': BROWSER_UA, 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8' },
   })
-  if (!response.ok) return ''
+  if (!response.ok) return []
   const html = await response.text()
-  const titles: string[] = []
-  for (const match of html.matchAll(/<a[^>]*class="result__a"[^>]*>([\s\S]*?)<\/a>/g)) {
-    titles.push(stripHtml(match[1] ?? ''))
+  const anchors = [...html.matchAll(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)]
+  const snippets = [...html.matchAll(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)]
+  const hits: RawHit[] = []
+  const count = Math.max(anchors.length, snippets.length)
+  for (let index = 0; index < Math.min(count, 8); index += 1) {
+    const title = stripHtml(anchors[index]?.[2] ?? '')
+    const url = decodeDdgUrl(anchors[index]?.[1] ?? '')
+    const snippet = stripHtml(snippets[index]?.[1] ?? '')
+    if (title === '' && url === '' && snippet === '') continue
+    hits.push({ title, url, snippet })
   }
-  const snippets: string[] = []
-  for (const match of html.matchAll(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)) {
-    snippets.push(stripHtml(match[1] ?? ''))
+  return hits
+}
+
+/**
+ * Terms that mark a scraped hit as genuinely discussing malicious / attack /
+ * vulnerability activity. A hit must contain the plugin name AND one of these
+ * to be surfaced, so unrelated Bing/DDG noise (throttle pages, generic "npm"
+ * results, homonym matches) is never shown as a report about the plugin.
+ */
+const MALICIOUS_REPORT_KEYWORDS = [
+  'malicious', 'malware', 'backdoor', 'compromised', 'compromise', 'typosquat', 'typosquatting',
+  'credential', 'stealer', 'infostealer', 'steal', 'stolen', 'supply chain', 'supply-chain',
+  'vulnerability', 'vulnerabilities', 'exploit', 'attack', 'attacker', 'breach', 'breached',
+  'trojan', 'ransomware', 'hijack', 'hijacked', 'phishing', 'botnet', 'cryptominer', 'miner',
+  'malvertising', 'security incident', 'cve-', 'mal-', 'poisoned', 'poisoning',
+  '恶意', '后门', '供应链', '攻击', '木马', '病毒', '窃取', '盗取', '泄露', '泄漏', '劫持',
+  '钓鱼', '漏洞', '入侵', '投毒', '篡改', '挖矿', '僵尸网络', '安全事件', '中毒', '感染',
+]
+
+/** Lowercased name variants a hit must mention (handles scoped `@org/pkg`). */
+function nameNeedles(pluginName: string): string[] {
+  const trimmed = pluginName.trim().toLowerCase()
+  if (trimmed === '') return []
+  const needles = [trimmed]
+  const unscoped = trimmed.replace(/^@[^/]+\//, '')
+  if (unscoped !== '' && unscoped !== trimmed) needles.push(unscoped)
+  return needles
+}
+
+/**
+ * A scraped hit only counts as evidence when it is genuinely about THIS plugin
+ * AND discusses malicious/attack/vulnerability activity. Keyless Bing/DDG
+ * scraping frequently returns unrelated noise, so require both a name match and
+ * a security term before the hit is surfaced to the model or the panel.
+ */
+function isRelevantHit(hit: RawHit, needles: string[]): boolean {
+  if (needles.length === 0) return false
+  const hay = `${hit.title}\n${hit.snippet}\n${hit.url}`.toLowerCase()
+  if (!needles.some(needle => hay.includes(needle))) return false
+  return MALICIOUS_REPORT_KEYWORDS.some(keyword => hay.includes(keyword))
+}
+
+/**
+ * Search the web for reports that a plugin is malicious/compromised. Runs
+ * several targeted queries (English + Chinese) through Bing, falling back to
+ * DuckDuckGo per query, aggregates the hits, dedupes by URL, and flattens them
+ * into a compact text summary for the model. Never throws — a blocked engine
+ * only degrades to fewer (or no) hits.
+ */
+async function searchMaliciousReports(pluginName: string): Promise<{ hits: WebSearchHit[]; summary: string }> {
+  const queries = [
+    `${JSON.stringify(pluginName)} npm malicious OR malware OR backdoor OR compromised`,
+    `${JSON.stringify(pluginName)} npm 恶意 OR 后门 OR 供应链攻击`,
+  ]
+  const needles = nameNeedles(pluginName)
+  const collected = new Map<string, WebSearchHit>()
+  const push = (hit: RawHit): void => {
+    if (hit.title === '' && hit.url === '' && hit.snippet === '') return
+    if (!isRelevantHit(hit, needles)) return
+    if (collected.size >= 10) return
+    const key = hit.url !== '' ? hit.url : `${hit.title}|${collected.size}`
+    if (collected.has(key)) return
+    collected.set(key, {
+      title: hit.title.slice(0, 200),
+      url: hit.url,
+      snippet: hit.snippet.slice(0, 260),
+    })
   }
-  const lines: string[] = []
-  const count = Math.max(titles.length, snippets.length)
-  for (let index = 0; index < Math.min(count, 5); index += 1) {
-    const title = (titles[index] ?? '').slice(0, 160)
-    const snippet = (snippets[index] ?? '').slice(0, 200)
-    if (title === '' && snippet === '') continue
-    lines.push(`- ${title}${snippet !== '' ? ` — ${snippet}` : ''}`)
+
+  for (const query of queries) {
+    if (collected.size >= 10) break
+    let hits: RawHit[] = []
+    try {
+      hits = await searchBing(query)
+      if (hits.length === 0) hits = await searchDuckDuckGo(query)
+    } catch {
+      /* best-effort: a failing engine contributes nothing */
+    }
+    for (const hit of hits) push(hit)
+    // Stagger engineered requests so an aggressive engine is less likely to throttle.
+    if (collected.size < 10) await new Promise(resolve => setTimeout(resolve, 350))
   }
-  return lines.join('\n')
+
+  const hits = [...collected.values()]
+  if (hits.length === 0) {
+    // No hit genuinely tied to this plugin + a malicious/attack term: report
+    // "none" rather than surfacing unrelated search noise to the model/panel.
+    return { hits: [], summary: '' }
+  }
+  const summary = hits
+    .map(hit => {
+      const head = hit.title !== '' ? hit.title : hit.url
+      const urls = hit.url !== '' && hit.title !== '' ? `（${hit.url}）` : ''
+      return `- ${head}${urls}${hit.snippet !== '' ? ` — ${hit.snippet}` : ''}`
+    })
+    .join('\n')
+  return { hits, summary }
 }
 
 /** Best-effort parse of `owner/repo` from the many shapes a package.json repository url takes. */
@@ -437,7 +615,39 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string): Pro
   return github
 }
 
-/** npm registry + download stats + a web search, run in parallel with graceful degradation. */
+/**
+ * Query OSV.dev for known advisory / malicious-package records of an npm
+ * package. This is the authoritative, keyless "has it been reported as
+ * malicious?" signal. Never throws — degrades to an empty list.
+ */
+async function lookupOsvAdvisories(pluginName: string): Promise<AdvisoryFinding[]> {
+  try {
+    const response = await fetch('https://api.osv.dev/v1/query', {
+      method: 'POST',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'user-agent': 'dsh-plugin-guard/0.1.0 (security audit)',
+      },
+      body: JSON.stringify({ package: { name: pluginName, ecosystem: 'npm' } }),
+    })
+    if (!response.ok) return []
+    const data = await response.json() as { vulns?: unknown }
+    const vulns = Array.isArray(data.vulns) ? data.vulns : []
+    return (vulns as Array<Record<string, unknown>>).slice(0, 6).map((entry): AdvisoryFinding => {
+      const id = typeof entry.id === 'string' ? entry.id : ''
+      const summary = typeof entry.summary === 'string' ? entry.summary : ''
+      const aliases = (Array.isArray(entry.aliases) ? entry.aliases : []).map(value => String(value)).filter(value => value !== '')
+      const malicious = id.startsWith('MAL-') || /malicious/i.test(summary)
+      return { id, summary, malicious, aliases, source: 'OSV.dev' }
+    }).filter(entry => entry.id !== '' || entry.summary !== '')
+  } catch {
+    return []
+  }
+}
+
+/** npm registry + download stats + OSV advisories + a web search, run in parallel with graceful degradation. */
 async function lookupPluginReputation(pluginName: string): Promise<ReputationEvidence> {
   const emptyGithub: GithubEvidence = {
     fullName: '',
@@ -463,6 +673,8 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
     npmModified: '',
     weeklyDownloads: -1,
     searchResults: '',
+    webSearchHits: [],
+    advisories: [],
     github: emptyGithub,
     note: '',
   }
@@ -472,10 +684,11 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
   const registryUrl = `https://registry.npmjs.org/${pluginName}`
   const downloadsUrl = `https://api.npmjs.org/downloads/point/last-week/${pluginName}`
 
-  const [npmResult, downloadsResult, searchResult] = await Promise.allSettled([
+  const [npmResult, downloadsResult, searchResult, advisoryResult] = await Promise.allSettled([
     fetchJson(registryUrl, FETCH_TIMEOUT_MS),
     fetchJson(downloadsUrl, FETCH_TIMEOUT_MS),
-    searchReputation(pluginName),
+    searchMaliciousReports(pluginName),
+    lookupOsvAdvisories(pluginName),
   ])
 
   if (npmResult.status === 'fulfilled') {
@@ -513,7 +726,12 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
     if (typeof info.downloads === 'number') context.weeklyDownloads = info.downloads
   }
 
-  if (searchResult.status === 'fulfilled') context.searchResults = searchResult.value
+  if (searchResult.status === 'fulfilled') {
+    context.searchResults = searchResult.value.summary
+    context.webSearchHits = searchResult.value.hits
+  }
+
+  if (advisoryResult.status === 'fulfilled') context.advisories = advisoryResult.value
 
   context.note = notes.join('；')
   return context

@@ -117,12 +117,82 @@ function GithubBox({ github, t }: { github: GithubEvidence; t: (key: string) => 
   )
 }
 
+/** Known vulnerability / malicious-package advisories from OSV.dev (authoritative, highlighted when malicious). */
+function AdvisoriesBox({ reputation, t }: { reputation: ReputationEvidence; t: (key: string) => string }): ReactElement {
+  const advisories = reputation.advisories ?? []
+  const heading = <div style={{ fontWeight: 600 }}>{t('aiAdvisories')}</div>
+  if (advisories.length === 0) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        {heading}
+        <div style={{ color: palette.mute }}>{t('aiAdvisoriesNone')}</div>
+      </div>
+    )
+  }
+  const hasMalicious = advisories.some(item => item.malicious)
+  return (
+    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: hasMalicious ? palette.redBg : palette.busyBg, border: `1px solid ${hasMalicious ? palette.red : palette.busyBorder}` }}>
+      {heading}
+      <ul style={{ margin: '4px 0 0', paddingLeft: 0, listStyle: 'none' }}>
+        {advisories.map((advisory, index) => (
+          <li key={index} style={{ margin: '4px 0' }}>
+            <span style={{ fontWeight: 600, color: advisory.malicious ? palette.red : '#444' }}>
+              {advisory.malicious ? '⚠ ' : ''}{advisory.id}
+            </span>
+            {advisory.aliases.length > 0 && <span style={{ color: palette.mute, fontSize: 12 }}> ({advisory.aliases.join(', ')})</span>}
+            {advisory.summary !== '' && <div style={{ fontSize: 12, color: '#555', wordBreak: 'break-all' }}>{advisory.summary}</div>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Malicious/attack web-report hits surfaced with clickable links (falls back to flat text for older results). */
+function WebReportsBox({ reputation, t }: { reputation: ReputationEvidence; t: (key: string) => string }): ReactElement {
+  const hits = reputation.webSearchHits ?? []
+  const heading = <div style={{ fontWeight: 600 }}>{t('aiWebReports')}</div>
+  if (hits.length === 0) {
+    const searchLines = (reputation.searchResults ?? '').split('\n').map(line => line.trim()).filter(line => line !== '')
+    if (searchLines.length === 0) {
+      return (
+        <div style={{ marginTop: 6 }}>
+          {heading}
+          <div style={{ color: palette.mute }}>{t('aiWebNoReports')}</div>
+        </div>
+      )
+    }
+    return (
+      <div style={{ marginTop: 6 }}>
+        {heading}
+        <ul style={{ margin: '3px 0 0', paddingLeft: 18 }}>
+          {searchLines.map((line, index) => (
+            <li key={index} style={{ margin: '2px 0', wordBreak: 'break-all' }}>{line.replace(/^- /, '')}</li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      {heading}
+      <ul style={{ margin: '3px 0 0', paddingLeft: 0, listStyle: 'none' }}>
+        {hits.map((hit, index) => (
+          <li key={index} style={{ margin: '5px 0' }}>
+            {hit.url !== ''
+              ? <SafeLink url={hit.url} label={hit.title !== '' ? hit.title : hit.url} />
+              : <span style={{ fontWeight: 600, fontSize: 12 }}>{hit.title}</span>}
+            {hit.snippet !== '' && <div style={{ fontSize: 12, color: '#555', wordBreak: 'break-all', marginTop: 1 }}>{hit.snippet}</div>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /** Reputation evidence panel shown under the AI verdict — collapsed by default, click to expand. */
 function ReputationBox({ reputation, t }: { reputation: ReputationEvidence; t: (key: string) => string }): ReactElement {
   const hasNpm = reputation.npmDescription !== '' || reputation.npmLatest !== '' || reputation.npmMaintainers.length > 0
-  const searchLines = reputation.searchResults !== ''
-    ? reputation.searchResults.split('\n').map(line => line.trim()).filter(line => line !== '')
-    : []
   return (
     <details style={{ marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${palette.border}`, fontSize: 12 }}>
       <summary style={{ cursor: 'pointer', fontWeight: 600, color: palette.mute, userSelect: 'none' }}>
@@ -146,16 +216,8 @@ function ReputationBox({ reputation, t }: { reputation: ReputationEvidence; t: (
           </div>
         )}
         <GithubBox github={reputation.github} t={t} />
-        {searchLines.length > 0 && (
-          <div style={{ marginTop: 6 }}>
-            <div style={{ fontWeight: 600 }}>{t('aiSearchResults')}</div>
-            <ul style={{ margin: '3px 0 0', paddingLeft: 18 }}>
-              {searchLines.map((line, index) => (
-                <li key={index} style={{ margin: '2px 0', wordBreak: 'break-all' }}>{line.replace(/^- /, '')}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <AdvisoriesBox reputation={reputation} t={t} />
+        <WebReportsBox reputation={reputation} t={t} />
         {reputation.note !== '' && (
           <div style={{ marginTop: 6, color: palette.mute, fontStyle: 'italic' }}>{reputation.note}</div>
         )}
