@@ -85,7 +85,7 @@ const SYSTEM_PROMPT = [
   '- 若能力与功能基本一致、仅实现上值得警惕（如命令拼接、硬编码外联地址），给出 "suspicious" 及具体复核建议。',
   '- 互联网声誉只作为佐证：知名维护者 / 大量下载 / 正常仓库 / 中立搜索结果可降低疑点；无名新包、混淆代码、可疑安装脚本则提高疑点。尤其「互联网恶意/攻击报告检索」若命中"该插件被举报为恶意 / malware / trojan / backdoor / 供应链攻击 / 后门 / 挖矿"等明确指控，应显著提高判为 "malicious" 或 "suspicious" 的权重；但这些指控也可能是误报、竞品抹黑或营销内容，需结合命中来源的可信度（安全厂商 / 官方公告 / 可信开发者 / 社区讨论）综合判断，不要把单一负面命中直接等同于恶意。声誉信息缺失时不臆造。',
   '- 「已知漏洞/恶意库记录（OSV.dev）」是权威信号：若出现 [恶意] 标记（MAL- 前缀或 "Malicious code/package" 摘要），说明该包已被官方恶意包数据库收录，应强烈倾向判为 "malicious"；若只是普通漏洞（ReDoS、注入等非恶意条目），则作为 "suspicious" 的佐证，并在 recommendations 中给出升级/加固建议；无收录不代表安全。',
-  '- GitHub 仓库信号（若提供）：作者账号刚注册、公开仓库极少、仓库极新却 star 异常偏高、或 npm 包与仓库内容明显不符，都是仿冒/钓鱼/刷星的信号，应提高疑点；反之老账号、多仓库、star 与活跃度匹配则降低疑点。注意"短时间内 star 不合理暴涨"与"无其他仓库的新号作者"组合尤其可疑。',
+  '- GitHub 仓库信号（若提供）：作者账号刚注册、公开仓库极少、仓库极新却 star 异常偏高、或 npm 包与仓库内容明显不符，都是仿冒/钓鱼/刷星的信号，应提高疑点；反之老账号、多仓库、star 与活跃度匹配则降低疑点。注意"短时间内 star 不合理暴涨"与"无其他仓库的新号作者"组合尤其可疑。若 GitHub 查询备注标明该仓库是“按包名从 npm 推断”（插件自身未声明地址），则它很可能只是同名仓库、与该插件无关，其 star/作者/创建时间等不可作为该插件的可信证据，应忽略或仅作弱参考。',
   '',
   '判定标准：',
   '- "safe": 危险能力属于该插件的合理功能，未发现超出功能的恶意意图。',
@@ -552,8 +552,55 @@ function parseGithubRepo(repository: string): { owner: string; repo: string } | 
   return { owner, repo }
 }
 
+/** All github.com owner/repo URLs mentioned in arbitrary text (README, homepage, etc.). */
+function findGithubUrls(text: string): string[] {
+  if (text === '') return []
+  const urls: string[] = []
+  const pattern = /(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:|git\+ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/gi
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text)) !== null) {
+    const owner = match[1] ?? ''
+    const repo = (match[2] ?? '').replace(/\.git$/i, '')
+    if (owner === '' || repo === '') continue
+    urls.push(`https://github.com/${owner}/${repo}`)
+  }
+  return urls
+}
+
+/**
+ * Resolve which GitHub repo to investigate, preferring an address the plugin
+ * states about ITSELF over a name-based lookup. Order: package.json
+ * `repository` -> `homepage` -> README/docs (preferring a repo whose name
+ * matches the plugin) -> npm registry by package name. The last is a name-based
+ * guess that can land on an unrelated same-named repo, so it is flagged.
+ */
+function resolvePluginRepo(
+  metadata: PluginMetadata,
+  npmRepository: string,
+  pluginName: string,
+): { url: string; fromOwnContent: boolean } {
+  const unscoped = pluginName.replace(/^@[^/]+\//, '').toLowerCase()
+  // 1. package.json repository — the plugin's own explicit declaration.
+  const declared = parseGithubRepo(metadata.repository)
+  if (declared !== null) return { url: `https://github.com/${declared.owner}/${declared.repo}`, fromOwnContent: true }
+  // 2. package.json homepage, when it is a github repo URL.
+  const home = findGithubUrls(metadata.homepage)
+  if (home.length > 0) return { url: home[0] ?? '', fromOwnContent: true }
+  // 3. README / docs — prefer a repo whose name matches the plugin over any link.
+  const readme = findGithubUrls(metadata.readmeExcerpt)
+  if (readme.length > 0) {
+    const matching = readme.find(url => url.toLowerCase().endsWith(`/${unscoped}`))
+    return { url: matching ?? readme[0] ?? '', fromOwnContent: true }
+  }
+  // 4. Last resort: npm registry repository for the same package NAME — can be
+  //    an unrelated project that merely shares the name, so flag it downstream.
+  const byName = parseGithubRepo(npmRepository)
+  if (byName !== null) return { url: `https://github.com/${byName.owner}/${byName.repo}`, fromOwnContent: false }
+  return { url: '', fromOwnContent: false }
+}
+
 /** Fetch repo + owner info from the GitHub REST API; never throws, degrades to note. */
-async function lookupGithubRepo(repositoryUrl: string, githubToken: string): Promise<GithubEvidence> {
+async function lookupGithubRepo(repositoryUrl: string, githubToken: string, fromOwnContent: boolean): Promise<GithubEvidence> {
   const empty: GithubEvidence = {
     fullName: '',
     htmlUrl: '',
@@ -569,7 +616,7 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string): Pro
     note: '',
   }
   const parsed = parseGithubRepo(repositoryUrl)
-  if (parsed === null) return { ...empty, note: '未从包元数据解析到 GitHub 仓库' }
+  if (parsed === null) return { ...empty, note: '未解析到 GitHub 仓库地址' }
   const { owner, repo } = parsed
   const github: GithubEvidence = {
     ...empty,
@@ -577,6 +624,9 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string): Pro
     htmlUrl: `https://github.com/${owner}/${repo}`,
   }
   const notes: string[] = []
+  if (!fromOwnContent) {
+    notes.push('⚠ 插件自身未声明 GitHub 地址，此仓库是按包名从 npm 推断的，可能为同名仓库，请人工核对')
+  }
   const authHeaders = githubToken !== '' ? { authorization: `Bearer ${githubToken}` } : undefined
   const [repoResult, ownerResult] = await Promise.allSettled([
     fetchJson(`https://api.github.com/repos/${owner}/${repo}`, FETCH_TIMEOUT_MS, authHeaders),
@@ -779,8 +829,8 @@ export async function auditPluginWithAi(
   const reputation = await lookupPluginReputation(plugin.name)
 
   emit('researching', '查询 GitHub 仓库与作者账号信息…')
-  const repoUrl = metadata.repository !== '' ? metadata.repository : reputation.npmRepository
-  const github = await lookupGithubRepo(repoUrl, githubToken)
+  const resolvedRepo = resolvePluginRepo(metadata, reputation.npmRepository, plugin.name)
+  const github = await lookupGithubRepo(resolvedRepo.url, githubToken, resolvedRepo.fromOwnContent)
   reputation.github = github
   const githubSummary = github.fullName !== ''
     ? `GitHub: ${github.fullName} ⭐${github.stars >= 0 ? String(github.stars) : '?'}`
