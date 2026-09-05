@@ -5,7 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - unreleased
+## [Unreleased]
+
+### Added
+
+- AI audit reputation layer: **OSV.dev** advisory lookup (authoritative,
+  keyless) surfaces known npm vulnerabilities and malicious-package records;
+  `MAL-*` / "Malicious" entries are tagged and strongly bias the verdict toward
+  `malicious`.
+- AI audit reputation layer: **internet malicious/attack report search**
+  (Bing primary, DuckDuckGo fallback; Chinese + English queries anchored on the
+  package name) replaces the old single DuckDuckGo snapshot.
+- Security panel: dedicated **Advisories** and **Web reports** boxes under the
+  reputation evidence, with clickable source links and zh/en locale strings.
+
+### Changed
+
+- Web-search hits are **relevance-filtered**: a hit is surfaced only when it
+  mentions the plugin name AND a malicious/attack term, so unrelated scrape
+  noise is never shown; when nothing relevant is found the panel reports "none"
+  instead of listing junk URLs.
+- GitHub repo resolution now **prefers the plugin's own declared URL**
+  (package.json `repository` / `homepage`, then README/docs) and only falls back
+  to an npm-by-name lookup when the plugin states none; that fallback is flagged
+  as a possible same-named repo, and the AI prompt is told to discount it.
+
+## [0.1.0]
 
 ### Added
 

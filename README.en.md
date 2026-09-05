@@ -13,8 +13,12 @@
 - **Static scanning**: a file-by-file inspection of third-party plugin source that flags 13 categories of dangerous capability (child processes, `eval`, `vm`, shell, file read/write, network, environment variables, system probing, obfuscation, suspicious exfiltration URLs, and more), scored by severity.
 - **Dependency review**: flags dependencies that come from outside the npm registry (`git:` / `file:` / `link:` / URL) and packages whose names hit suspicious keywords.
 - **Install-script review**: calls out `preinstall` / `install` / `postinstall` scripts — a common supply-chain attack surface.
-- **AI online audit**: uses the default model to re-judge each plugin from "claimed features + static code evidence + internet reputation", returning a `safe / suspicious / malicious / inconclusive` verdict with recommendations.
-- **Reputation evidence**: npm registry metadata (description, maintainers, publish dates, weekly downloads), GitHub repo signals (stars, forks, archived status, author account age), and search snapshots.
+- **AI online audit**: uses the default model to re-judge each plugin from "claimed features + static code evidence + layered internet reputation", returning a `safe / suspicious / malicious / inconclusive` verdict with recommendations.
+- **Reputation evidence** (multi-source online verification; every lookup is best-effort and degrades gracefully, never blocking the audit):
+  - **npm registry metadata**: description, maintainers, publish/update dates, weekly downloads;
+  - **OSV.dev authoritative records**: whether the package is listed in the official vulnerability / malicious-package database — `MAL-*` or "Malicious" entries are highlighted as malicious and are a strong signal;
+  - **Internet malicious/attack report search**: Bing-primary with a DuckDuckGo fallback, Chinese + English queries for "is this plugin reported as malicious / a backdoor / a supply-chain attack". Hits are **relevance-filtered** — only results that actually mention the plugin name AND a malicious/attack term are shown; when there is no relevant report it simply states "no malicious/attack reports found for this plugin" and never lists unrelated content or links;
+  - **GitHub repo signals**: stars, forks, archived status, author account age, public repo count. The repo URL is taken **first from the plugin's own declaration** (package.json `repository` / `homepage`, README/docs); only when the plugin states none is it inferred from npm by package name, clearly flagged as "possibly a same-named repo — verify manually".
 - **GitHub Token**: optionally enter a Personal Access Token in the panel to raise the GitHub API limit from 60 to 5000 requests/hour.
 
 ## Install & enable
