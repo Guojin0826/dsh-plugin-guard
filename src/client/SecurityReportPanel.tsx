@@ -1,7 +1,7 @@
 /** Settings section rendering the plugin security audit report (green/yellow/red) plus per-plugin AI audit with live progress. */
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useReducer, useState, type ReactElement } from 'react'
-import type { AiAuditResult, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, ReputationEvidence, SecurityReport } from '../contracts.ts'
+import type { AiAuditResult, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SecurityReport } from '../contracts.ts'
 
 export interface SecuritySectionInjected {
   getReport: () => Promise<SecurityReport>
@@ -190,6 +190,8 @@ function WebReportsBox({ reputation, t }: { reputation: ReputationEvidence; t: (
 /** Reputation evidence panel shown under the AI verdict — collapsed by default, click to expand. */
 function ReputationBox({ reputation, t }: { reputation: ReputationEvidence; t: (key: string) => string }): ReactElement {
   const hasNpm = reputation.npmDescription !== '' || reputation.npmLatest !== '' || reputation.npmMaintainers.length > 0
+  const ageDays = reputation.npmCreated !== '' ? Math.floor((Date.now() - new Date(reputation.npmCreated).getTime()) / 86_400_000) : -1
+  const showAge = Number.isFinite(ageDays) && ageDays >= 0
   return (
     <details style={{ marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${palette.border}`, fontSize: 12 }}>
       <summary style={{ cursor: 'pointer', fontWeight: 600, color: palette.mute, userSelect: 'none' }}>
@@ -206,6 +208,18 @@ function ReputationBox({ reputation, t }: { reputation: ReputationEvidence; t: (
         <div style={{ marginTop: 3 }}>
           {t('aiDownloads')}: {reputation.weeklyDownloads >= 0 ? reputation.weeklyDownloads.toLocaleString() : t('aiUnknown')}
         </div>
+        {(showAge || reputation.npmDeprecated !== '') && (
+          <div style={{ marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: '3px 12px' }}>
+            {showAge && (
+              <span style={ageDays < 30 ? { color: palette.red, fontWeight: 600 } : undefined}>
+                {t('aiAge')}: {ageDays} {t('aiDays')}{ageDays < 30 ? ` · ${t('aiNewPackage')}` : ''}
+              </span>
+            )}
+            {reputation.npmDeprecated !== '' && (
+              <span style={{ color: palette.red, fontWeight: 600 }}>⚠ {t('aiDeprecated')}: {reputation.npmDeprecated}</span>
+            )}
+          </div>
+        )}
         {(reputation.npmHomepage !== '' || reputation.npmRepository !== '') && (
           <div style={{ marginTop: 3 }}>
             {reputation.npmHomepage !== '' && <SafeLink url={reputation.npmHomepage} label={t('aiHomepage')} />}
@@ -269,11 +283,12 @@ function AiAuditBox({ state, t }: { state: AiState; t: (key: string) => string }
   )
 }
 
-function PluginRow({ plugin, t, aiState, onAudit }: {
+function PluginRow({ plugin, t, aiState, onAudit, delta }: {
   plugin: PluginAudit
   t: (key: string) => string
   aiState: AiState
   onAudit: () => void
+  delta?: PluginDelta
 }): ReactElement {
   const badge = (
     <span style={{
@@ -297,11 +312,31 @@ function PluginRow({ plugin, t, aiState, onAudit }: {
         {badge}
         <code style={{ fontWeight: 600, fontSize: 14 }}>{plugin.name}</code>
         <span style={{ fontSize: 12, color: palette.mute }}>v{plugin.version}</span>
+        {delta !== undefined && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: palette.red }}>{delta.isNew ? `🆕 ${t('deltaNew')}` : `↑ ${t('deltaChanged')}`}</span>
+        )}
         <span style={{ fontSize: 11, opacity: 0.75 }}>{plugin.active ? t('active') : t('inactive')}</span>
         <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.mute }}>{t('colScore')}: {plugin.score}</span>
       </summary>
 
       <div style={{ borderTop: `1px solid ${palette.border}`, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {delta !== undefined && (
+          <div style={{ padding: '8px 10px', borderRadius: 6, background: palette.yellowBg, border: `1px solid ${palette.yellow}`, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4, color: palette.yellow }}>
+              {delta.isNew ? `🆕 ${t('deltaNewPlugin')}` : `⚠ ${t('deltaSinceLastScan')}`}
+            </div>
+            {!delta.isNew && delta.previousVersion !== delta.currentVersion && (
+              <div>{t('colVersion')}: {delta.previousVersion} → {delta.currentVersion}</div>
+            )}
+            {delta.addedFlags.length > 0 && (
+              <div>{t('deltaAddedFlags')}: <code>{delta.addedFlags.join(', ')}</code></div>
+            )}
+            {delta.addedPerms.length > 0 && (
+              <div>{t('deltaAddedPerms')}: <code>{delta.addedPerms.join(', ')}</code></div>
+            )}
+          </div>
+        )}
+
         <div>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{t('flags')} ({plugin.flags.length})</div>
           {plugin.flags.length === 0
@@ -474,6 +509,7 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
   useEffect(() => { void run() }, [])
 
   const totalScanned = report?.plugins.reduce((sum, plugin) => sum + plugin.scannedFiles, 0) ?? 0
+  const deltaMap = new Map((report?.deltas ?? []).map(delta => [delta.name, delta]))
 
   return (
     <section style={{ padding: '4px 0' }}>
@@ -578,6 +614,7 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
                   t={t}
                   aiState={getAiState(plugin.name)}
                   onAudit={() => { void runAi(plugin.name) }}
+                  delta={deltaMap.get(plugin.name)}
                 />
               ))}
           </div>

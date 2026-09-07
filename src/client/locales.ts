@@ -55,6 +55,10 @@ export const zh: Record<string, string> = {
   aiRecommendations: '处置建议',
   aiReputation: '声誉佐证',
   aiDownloads: '周下载量',
+  aiAge: '包龄',
+  aiDays: '天',
+  aiNewPackage: '新包，恶意比例偏高',
+  aiDeprecated: '已弃用',
   aiMaintainers: '维护者',
   aiWebReports: '互联网恶意/攻击报告检索',
   aiWebNoReports: '未检索到与该插件相关的恶意/攻击报告',
@@ -69,6 +73,12 @@ export const zh: Record<string, string> = {
   aiAccountRegistered: '账号注册于',
   aiPublicRepos: '公开仓库',
   aiFollowers: '关注者',
+  deltaNew: '新',
+  deltaChanged: '变更',
+  deltaNewPlugin: '新安装的插件',
+  deltaSinceLastScan: '自上次扫描有变更',
+  deltaAddedFlags: '新增风险能力',
+  deltaAddedPerms: '新增声明权限',
 }
 
 export const en: Record<string, string> = {
@@ -123,6 +133,10 @@ export const en: Record<string, string> = {
   aiRecommendations: 'Recommendations',
   aiReputation: 'Reputation',
   aiDownloads: 'Weekly downloads',
+  aiAge: 'Age',
+  aiDays: 'days',
+  aiNewPackage: 'new package, higher malicious rate',
+  aiDeprecated: 'deprecated',
   aiMaintainers: 'Maintainers',
   aiWebReports: 'Web malicious/attack reports',
   aiWebNoReports: 'No malicious/attack reports found for this plugin',
@@ -137,6 +151,12 @@ export const en: Record<string, string> = {
   aiAccountRegistered: 'Account created',
   aiPublicRepos: 'public repos',
   aiFollowers: 'followers',
+  deltaNew: 'new',
+  deltaChanged: 'changed',
+  deltaNewPlugin: 'Newly installed plugin',
+  deltaSinceLastScan: 'Changed since last scan',
+  deltaAddedFlags: 'New risk flags',
+  deltaAddedPerms: 'New declared permissions',
 }
 
 /** The guard locale namespace's dictionary key domain. */

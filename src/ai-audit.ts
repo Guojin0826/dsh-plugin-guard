@@ -87,6 +87,7 @@ const SYSTEM_PROMPT = [
   '- 「已知漏洞/恶意库记录（OSV.dev）」是权威信号：若出现 [恶意] 标记（MAL- 前缀或 "Malicious code/package" 摘要），说明该包已被官方恶意包数据库收录，应强烈倾向判为 "malicious"；若只是普通漏洞（ReDoS、注入等非恶意条目），则作为 "suspicious" 的佐证，并在 recommendations 中给出升级/加固建议；无收录不代表安全。',
   '- GitHub 仓库信号（若提供）：作者账号刚注册、公开仓库极少、仓库极新却 star 异常偏高、或 npm 包与仓库内容明显不符，都是仿冒/钓鱼/刷星的信号，应提高疑点；反之老账号、多仓库、star 与活跃度匹配则降低疑点。注意"短时间内 star 不合理暴涨"与"无其他仓库的新号作者"组合尤其可疑。若 GitHub 查询备注标明该仓库是“按包名从 npm 推断”（插件自身未声明地址），则它很可能只是同名仓库、与该插件无关，其 star/作者/创建时间等不可作为该插件的可信证据，应忽略或仅作弱参考。',
   '- 「声明的宿主服务权限」反映插件请求宿主注入的服务面：声明的服务越强（模型 / 网络 / 文件 / 进程 / 密钥 / 浏览器），插件默认可接触的宿主资源越多。当代码静态扫描出现高危能力、但声明的宿主服务全部为轻量级（UI / 国际化 / 配置类）时，属于"能力与声明面不匹配"，应显著提高判为 suspicious 或 malicious 的怀疑；未声明宿主服务时不做该推断。',
+  '- 「包龄 / 弃用」信号：首次发布距今很短（如 < 30 天）的新包，恶意比例显著偏高（攻击者常"发布→得手→数日内被下架"）；若 npm 标记该包 deprecated（维护者亲自声明弃用 / 有安全问题 / 已迁移），是来自源头的权威"不可信"信号。两者都应提高疑点，但年龄本身不是铁证（合法新包也存在）、deprecated 也可能只是改名迁移——作为风险乘数与上下文，不要仅凭此判恶意。',
   '',
   '判定标准：',
   '- "safe": 危险能力属于该插件的合理功能，未发现超出功能的恶意意图。',
@@ -133,6 +134,13 @@ function buildUserPrompt(
   lines.push(`- npm 首次发布: ${reputation.npmCreated || '(未知)'}`)
   lines.push(`- npm 最近更新: ${reputation.npmModified || '(未知)'}`)
   lines.push(`- 周下载量: ${reputation.weeklyDownloads >= 0 ? String(reputation.weeklyDownloads) : '(未知)'}`)
+  if (reputation.npmCreated !== '') {
+    const ageDays = Math.floor((Date.now() - new Date(reputation.npmCreated).getTime()) / 86_400_000)
+    if (Number.isFinite(ageDays) && ageDays >= 0) {
+      lines.push(`- 包龄: ${ageDays} 天${ageDays < 30 ? '（⚠ 新包，恶意比例偏高）' : ''}`)
+    }
+  }
+  if (reputation.npmDeprecated !== '') lines.push(`- ⚠ 已被维护者标记弃用 (deprecated): ${reputation.npmDeprecated.slice(0, 120)}`)
   if (reputation.note !== '') lines.push(`- 声誉查询备注: ${reputation.note}`)
   lines.push('')
 
@@ -724,6 +732,7 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
     npmMaintainers: [],
     npmCreated: '',
     npmModified: '',
+    npmDeprecated: '',
     weeklyDownloads: -1,
     webSearchHits: [],
     advisories: [],
@@ -768,6 +777,9 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
       const time = info.time as Record<string, unknown> | undefined
       context.npmCreated = typeof time?.created === 'string' ? String(time.created) : ''
       context.npmModified = typeof time?.modified === 'string' ? String(time.modified) : ''
+      const versions = info.versions as Record<string, Record<string, unknown>> | undefined
+      const latestVersion = context.npmLatest !== '' ? versions?.[context.npmLatest] : undefined
+      context.npmDeprecated = typeof latestVersion?.deprecated === 'string' ? String(latestVersion.deprecated) : ''
     }
   } else {
     notes.push(`npm 查询失败 (${reasonOf(npmResult.reason)})`)

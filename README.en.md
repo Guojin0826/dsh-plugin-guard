@@ -10,14 +10,15 @@
 
 ## Features
 
-- **Static scanning**: a file-by-file inspection of third-party plugin source that flags 13 categories of dangerous capability (child processes, `eval`, `vm`, shell, file read/write, network, environment variables, system probing, obfuscation, suspicious exfiltration URLs, and more), scored by severity.
+- **Static scanning**: a file-by-file inspection of third-party plugin source that flags 15 categories of dangerous capability (child processes, `eval`, `vm`, shell, file read/write, network, environment variables, system probing, obfuscation, suspicious exfiltration URLs, high-entropy payloads, credential-exfiltration patterns, and more), scored by severity.
 - **Dependency review**: flags dependencies that come from outside the npm registry (`git:` / `file:` / `link:` / URL) and packages whose names hit suspicious keywords.
 - **Install-script review**: calls out `preinstall` / `install` / `postinstall` scripts — a common supply-chain attack surface.
 - **Declared-permission scoring**: reads the host services each plugin declares it needs (`dsh.plugin.json` `entry.inject` and `package.json` `dsh.client.inject`), tiers each one — model / network / file / process / secret / browser access = high, UI / i18n / config = low, unknown = medium "review it" — and shows a 0–100 permission score with each service listed.
 - **Capability / declaration mismatch flag**: when the code hits high-severity capabilities but every declared service is low-power, the panel and the AI prompt raise a "high capability vs. light declared surface" warning — the strongest over-permission signal, computed deterministically instead of left for the model to infer.
+- **Version-diff alerting (continuous monitoring)**: each scan persists a baseline (`$DSH_HOME/storages/dsh-plugin-guard/baseline.json`) and the next scan diffs against it — the panel badges any plugin that is newly installed, changed version, or gained risk flags / declared permissions since last time. This turns a one-off snapshot into a change detector: the classic supply-chain attack (a trusted package shipping a malicious new version) surfaces directly as "changed since last scan: +install-script".
 - **AI online audit**: uses the default model to re-judge each plugin from "claimed features + static code evidence + layered internet reputation", returning a `safe / suspicious / malicious / inconclusive` verdict with recommendations.
 - **Reputation evidence** (multi-source online verification; every lookup is best-effort and degrades gracefully, never blocking the audit):
-  - **npm registry metadata**: description, maintainers, publish/update dates, weekly downloads;
+  - **npm registry metadata**: description, maintainers, publish/update dates, weekly downloads, **package age** (new packages < 30 days are flagged red — malware is often published → exploited → removed within days) and the **deprecated** notice (an authoritative "do not trust" signal from the maintainer);
   - **OSV.dev authoritative records**: whether the package is listed in the official vulnerability / malicious-package database — `MAL-*` or "Malicious" entries are highlighted as malicious and are a strong signal;
   - **Internet malicious/attack report search**: Bing-primary with a DuckDuckGo fallback, Chinese + English queries for "is this plugin reported as malicious / a backdoor / a supply-chain attack". Hits are **relevance-filtered** — only results that actually mention the plugin name AND a malicious/attack term are shown; when there is no relevant report it simply states "no malicious/attack reports found for this plugin" and never lists unrelated content or links;
   - **GitHub repo signals**: stars, forks, archived status, author account age, public repo count. The repo URL is taken **first from the plugin's own declaration** (package.json `repository` / `homepage`, README/docs); only when the plugin states none is it inferred from npm by package name, clearly flagged as "possibly a same-named repo — verify manually".
@@ -60,7 +61,7 @@ Each third-party plugin gets one row with:
 - the plugin name, version, and whether it is active;
 - its **risk score**, flags, **declared permissions**, dependencies, and number of files scanned.
 
-Expanding a row reveals every matched rule with the files that triggered it, the **declared host-service permissions** (with a mismatch warning), suspicious dependencies, and any scan errors.
+Expanding a row reveals **what changed since the last scan** (if anything: version bump, newly gained risk flags / declared permissions), every matched rule with the files that triggered it, the **declared host-service permissions** (with a mismatch warning), suspicious dependencies, and any scan errors.
 
 ### AI audit
 
@@ -93,6 +94,8 @@ The top of the panel provides a password-style Token field (never echoed back):
 | `fs-read` | Medium | file reads |
 | `network` | Medium | net / dgram / dns / tls / ws / undici, etc. |
 | `exfil-url` | Medium | pastebin / webhook.site / ngrok / tg bot / onion and similar exfiltration URLs |
+| `env-exfil` | Medium | one file reads `process.env.*` and also spawns/execs or makes a network call (suspected credential exfiltration) |
+| `high-entropy` | Medium | a long high-entropy string (suspected base64 / encrypted payload, regardless of decode method) |
 | `http` | Low | fetch / axios / request and other HTTP calls |
 | `env` | Low | reads of `process.env.*` |
 | `system-info` | Low | hostname / user / CPU / NIC and other system probing |

@@ -63,6 +63,19 @@ export interface PluginAudit {
   readonly errors: string[]
 }
 
+/** What changed for one plugin since the previous scan's baseline (version-diff alerting). */
+export interface PluginDelta {
+  readonly name: string
+  /** True when the plugin was absent from the previous baseline (newly installed). */
+  readonly isNew: boolean
+  readonly previousVersion: string
+  readonly currentVersion: string
+  /** Rule codes present now but not in the baseline. */
+  readonly addedFlags: string[]
+  /** Declared host services added since the baseline. */
+  readonly addedPerms: string[]
+}
+
 /** The full audit report returned by `guard.getReport`. */
 export interface SecurityReport {
   readonly generatedAt: string
@@ -73,6 +86,8 @@ export interface SecurityReport {
   readonly yellowCount: number
   readonly greenCount: number
   readonly plugins: PluginAudit[]
+  /** Per-plugin changes since the previous scan (empty on the first scan). */
+  readonly deltas: PluginDelta[]
 }
 
 export const severitySchema = z.enum(['high', 'medium', 'low'])
@@ -114,6 +129,15 @@ export const pluginAuditSchema = z.object({
   errors: z.array(z.string()),
 }).readonly()
 
+export const pluginDeltaSchema = z.object({
+  name: z.string().min(1),
+  isNew: z.boolean(),
+  previousVersion: z.string(),
+  currentVersion: z.string(),
+  addedFlags: z.array(z.string()),
+  addedPerms: z.array(z.string()),
+}).readonly()
+
 export const securityReportSchema = z.object({
   generatedAt: z.string().min(1),
   dshHome: z.string().min(1),
@@ -123,6 +147,7 @@ export const securityReportSchema = z.object({
   yellowCount: z.number().int().min(0),
   greenCount: z.number().int().min(0),
   plugins: z.array(pluginAuditSchema),
+  deltas: z.array(pluginDeltaSchema),
 }).readonly()
 
 /** The model's security verdict for one plugin. */
@@ -195,6 +220,8 @@ export interface ReputationEvidence {
   npmMaintainers: string[]
   npmCreated: string
   npmModified: string
+  /** npm deprecation message for the latest version; empty when not deprecated. */
+  npmDeprecated: string
   /** Weekly npm downloads; -1 when unknown. */
   weeklyDownloads: number
   /** Structured web-search hits from the malicious/attack-report lookup (title/url/snippet). */
@@ -264,6 +291,7 @@ export const reputationEvidenceSchema = z.object({
   npmMaintainers: z.array(z.string()),
   npmCreated: z.string(),
   npmModified: z.string(),
+  npmDeprecated: z.string(),
   weeklyDownloads: z.number(),
   webSearchHits: z.array(webSearchHitSchema),
   advisories: z.array(advisoryFindingSchema),

@@ -8,8 +8,8 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { auditPluginWithAi } from './ai-audit.ts'
-import { runAudit } from './scanner.ts'
-import type { AiAuditResult, AuditProgress, GithubTokenStatus, SecurityReport } from './contracts.ts'
+import { buildBaseline, computePluginDeltas, runAudit, type BaselineSnapshot } from './scanner.ts'
+import type { AiAuditResult, AuditProgress, GithubTokenStatus, PluginAudit, SecurityReport } from './contracts.ts'
 
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
@@ -90,10 +90,54 @@ export class GuardRuntime extends TypertRemoteService {
     this.progress.set(pluginName, { pluginName, phase, detail, startedAt })
   }
 
-  /** Run a fresh static audit over the profile's installed third-party plugins. */
+  /** File holding the previous scan's baseline, for version-diff alerting (best-effort, Host-local). */
+  private baselineFile(): string {
+    const dir = this.tokenDir()
+    return dir === '' ? '' : join(dir, 'baseline.json')
+  }
+
+  private loadBaseline(): BaselineSnapshot {
+    const file = this.baselineFile()
+    if (file === '') return {}
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { plugins?: unknown }
+      const plugins = parsed.plugins
+      if (plugins === null || typeof plugins !== 'object') return {}
+      const snapshot: BaselineSnapshot = {}
+      for (const [name, entry] of Object.entries(plugins as Record<string, unknown>)) {
+        if (entry === null || typeof entry !== 'object') continue
+        const record = entry as Record<string, unknown>
+        snapshot[name] = {
+          version: typeof record.version === 'string' ? record.version : '',
+          flags: Array.isArray(record.flags) ? record.flags.filter((item): item is string => typeof item === 'string') : [],
+          perms: Array.isArray(record.perms) ? record.perms.filter((item): item is string => typeof item === 'string') : [],
+        }
+      }
+      return snapshot
+    } catch {
+      return {}
+    }
+  }
+
+  private saveBaseline(plugins: PluginAudit[]): void {
+    const file = this.baselineFile()
+    if (file === '') return
+    try {
+      mkdirSync(this.tokenDir(), { recursive: true })
+      writeFileSync(file, JSON.stringify({ generatedAt: new Date().toISOString(), plugins: buildBaseline(plugins) }), 'utf-8')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[plugin-guard] 无法持久化扫描基线: ${message}`)
+    }
+  }
+
+  /** Run a fresh static audit, diff it against the previous scan's baseline, then persist the new baseline. */
   @Remote
   async getReport(): Promise<SecurityReport> {
-    return runAudit(this.profileDir(), this.config.maxScanFiles)
+    const report = runAudit(this.profileDir(), this.config.maxScanFiles)
+    const deltas = computePluginDeltas(report.plugins, this.loadBaseline())
+    this.saveBaseline(report.plugins)
+    return { ...report, deltas }
   }
 
   /** Ask the default model to assess one plugin against both the static scan and source evidence. */

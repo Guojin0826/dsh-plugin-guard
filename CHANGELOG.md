@@ -21,6 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the AI prompt raise a "high capability vs. light declared surface"
   warning. It does not fire when nothing is declared, so absence of a manifest
   is never treated as evidence.
+- **Version-diff alerting (continuous monitoring)**: each scan persists a
+  baseline (`$DSH_HOME/storages/dsh-plugin-guard/baseline.json`) and the next
+  scan diffs against it — the panel badges any plugin that is newly installed,
+  changed version, or *gained* risk flags / declared permissions since last
+  time. This turns the report from a one-off snapshot into a change detector:
+  the classic supply-chain attack (a trusted package shipping a malicious new
+  version) now surfaces as "changed since last scan: +install-script".
+- **Three high-signal static rules**:
+  - `high-entropy` — a long, whitespace-free string literal with Shannon
+    entropy ≥ 4.3 (not a data URI / URL / hex hash) flags an encoded or
+    encrypted payload regardless of how it is later decoded; the existing
+    `obfuscation` rule only catches the decode call itself.
+  - `env-exfil` — when one file both reads `process.env.*` and spawns/execs or
+    makes a network call, a cheap same-file taint approximation for credential
+    exfiltration (GuardDog does this with CodeQL; this is the lightweight
+    co-occurrence proxy).
+  - package age / deprecation — the reputation layer now derives the package's
+    age from its npm publish date (new packages < 30 days are flagged, per the
+    "cool-down" insight that malware is published → exploited → removed within
+    days) and surfaces the npm `deprecated` message; both feed the AI prompt as
+    legitimacy priors and are shown in the panel.
 
 ### Changed
 
@@ -29,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   judgment in the plugin's own declared host-service surface.
 - Internal cleanup: removed the dead `searchResults` reputation field and the
   duplicated empty-GitHub literal (no behavior change).
+- Static scans are now **deterministic**: the source walk is sorted, so
+  `maxFiles` truncation and the per-rule 8-file cap sample the same files every
+  run — a plugin with unchanged code produces an identical report, so
+  version-diff never flags spurious "changes" caused by flapping scan order.
 
 ### Fixed
 

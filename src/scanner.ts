@@ -11,7 +11,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import type { DepFinding, PermissionFinding, PluginAudit, RiskLevel, ScanFlag, SecurityReport, Severity } from './contracts.ts'
+import type { DepFinding, PermissionFinding, PluginAudit, PluginDelta, RiskLevel, ScanFlag, SecurityReport, Severity } from './contracts.ts'
 
 /** File extensions treated as source for scanning. */
 const SCAN_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx'])
@@ -57,7 +57,9 @@ function isNonRegistrySpec(spec: string): boolean {
 function* walkSource(dir: string, depth: number, maxDepth: number): Generator<string> {
   let entries: string[]
   try {
-    entries = readdirSync(dir)
+    // ponytail: sort for a stable traversal — readdir order is FS-dependent, and both the
+    // maxFiles truncation and the per-rule 8-file cap must sample the SAME files every run.
+    entries = readdirSync(dir).sort()
   } catch {
     return
   }
@@ -87,9 +89,49 @@ interface SourceScanResult {
   scannedFiles: number
 }
 
+/** Capability sinks that, co-occurring with `env` reads in one file, approximate a credential-exfiltration taint. */
+const EXEC_NET_SINKS = new Set(['child-process', 'shell', 'http', 'network', 'exfil-url'])
+
+/** Shannon entropy (bits per character) of a string. */
+function shannonEntropy(value: string): number {
+  const freq = new Map<string, number>()
+  for (const char of value) freq.set(char, (freq.get(char) ?? 0) + 1)
+  let entropy = 0
+  for (const count of freq.values()) {
+    const p = count / value.length
+    entropy -= p * Math.log2(p)
+  }
+  return entropy
+}
+
+/** Escape-aware string-literal matcher (single / double / backtick quotes). */
+const STRING_LITERAL_RE = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/g
+
+/**
+ * ponytail: heuristic for an encoded/encrypted payload — a long, whitespace-free
+ * string literal with Shannon entropy ≥ 4.3 that is not a data URI, URL, or pure
+ * hex hash. Catches base64/random blobs regardless of how they are later decoded
+ * (the `obfuscation` rule only catches the decode call itself).
+ */
+function hasHighEntropyString(text: string): boolean {
+  STRING_LITERAL_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = STRING_LITERAL_RE.exec(text)) !== null) {
+    const value = match[2]
+    if (value === undefined || value.length < 40) continue
+    if (/\s/.test(value)) continue
+    if (/^(?:data:|https?:\/\/)/i.test(value)) continue
+    if (/^[0-9a-f]+$/i.test(value)) continue
+    if (shannonEntropy(value) >= 4.3) return true
+  }
+  return false
+}
+
 /** Scan one plugin directory's own source (its nested node_modules is skipped). */
 function scanSourceTree(dir: string, maxFiles: number): SourceScanResult {
   const matches = new Map<string, { severity: Severity; label: string; files: Set<string> }>()
+  const taintFiles = new Set<string>()
+  const entropyFiles = new Set<string>()
   let scannedFiles = 0
 
   for (const file of walkSource(dir, 0, 5)) {
@@ -104,9 +146,11 @@ function scanSourceTree(dir: string, maxFiles: number): SourceScanResult {
     }
     scannedFiles += 1
     const rel = relative(dir, file)
+    const matchedCodes = new Set<string>()
     for (const rule of DANGER_RULES) {
       rule.re.lastIndex = 0
       if (!rule.re.test(text)) continue
+      matchedCodes.add(rule.code)
       let entry = matches.get(rule.code)
       if (entry === undefined) {
         entry = { severity: rule.severity, label: rule.label, files: new Set() }
@@ -114,6 +158,16 @@ function scanSourceTree(dir: string, maxFiles: number): SourceScanResult {
       }
       if (entry.files.size < 8) entry.files.add(rel)
     }
+    // ponytail: same-file env-read + exec/network co-occurrence — a cheap taint proxy for credential exfiltration.
+    if (taintFiles.size < 8 && matchedCodes.has('env')) {
+      for (const code of matchedCodes) {
+        if (EXEC_NET_SINKS.has(code)) {
+          taintFiles.add(rel)
+          break
+        }
+      }
+    }
+    if (entropyFiles.size < 8 && hasHighEntropyString(text)) entropyFiles.add(rel)
   }
 
   const flags: ScanFlag[] = [...matches.entries()].map(([code, entry]) => ({
@@ -122,6 +176,12 @@ function scanSourceTree(dir: string, maxFiles: number): SourceScanResult {
     label: entry.label,
     files: [...entry.files],
   }))
+  if (taintFiles.size > 0) {
+    flags.push({ code: 'env-exfil', severity: 'medium', label: '同文件读取环境变量并执行/外联（疑似凭据外传）', files: [...taintFiles] })
+  }
+  if (entropyFiles.size > 0) {
+    flags.push({ code: 'high-entropy', severity: 'medium', label: '高熵字符串（疑似编码/加密载荷）', files: [...entropyFiles] })
+  }
   flags.sort((a, b) => SEVERITY_SCORE[b.severity] - SEVERITY_SCORE[a.severity] || a.code.localeCompare(b.code))
   return { flags, scannedFiles }
 }
@@ -474,5 +534,52 @@ export function runAudit(profileDir: string, maxScanFiles: number): SecurityRepo
     yellowCount,
     greenCount,
     plugins,
+    deltas: [],
   }
+}
+
+/** One plugin's persisted state from the previous scan, for version-diff alerting. */
+export interface BaselineEntry {
+  readonly version: string
+  readonly flags: readonly string[]
+  readonly perms: readonly string[]
+}
+
+/** The persisted baseline snapshot: plugin name → its last-seen state. */
+export type BaselineSnapshot = Record<string, BaselineEntry>
+
+/** Build the baseline snapshot to persist from a fresh audit. */
+export function buildBaseline(plugins: PluginAudit[]): BaselineSnapshot {
+  const snapshot: BaselineSnapshot = {}
+  for (const plugin of plugins) {
+    snapshot[plugin.name] = {
+      version: plugin.version,
+      flags: plugin.flags.map(flag => flag.code),
+      perms: plugin.permissions.map(permission => permission.name),
+    }
+  }
+  return snapshot
+}
+
+/**
+ * Diff a fresh audit against the previous baseline: one delta per plugin that is
+ * newly installed, changed version, or gained flags/permissions. An empty
+ * baseline (first scan) yields no deltas — there is nothing to compare against.
+ */
+export function computePluginDeltas(plugins: PluginAudit[], baseline: BaselineSnapshot): PluginDelta[] {
+  if (Object.keys(baseline).length === 0) return []
+  const deltas: PluginDelta[] = []
+  for (const plugin of plugins) {
+    const previous = baseline[plugin.name]
+    if (previous === undefined) {
+      deltas.push({ name: plugin.name, isNew: true, previousVersion: '', currentVersion: plugin.version, addedFlags: [], addedPerms: [] })
+      continue
+    }
+    const addedFlags = plugin.flags.map(flag => flag.code).filter(code => !previous.flags.includes(code))
+    const addedPerms = plugin.permissions.map(permission => permission.name).filter(name => !previous.perms.includes(name))
+    if (previous.version !== plugin.version || addedFlags.length > 0 || addedPerms.length > 0) {
+      deltas.push({ name: plugin.name, isNew: false, previousVersion: previous.version, currentVersion: plugin.version, addedFlags, addedPerms })
+    }
+  }
+  return deltas
 }
