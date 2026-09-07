@@ -13,6 +13,8 @@
 - **Static scanning**: a file-by-file inspection of third-party plugin source that flags 13 categories of dangerous capability (child processes, `eval`, `vm`, shell, file read/write, network, environment variables, system probing, obfuscation, suspicious exfiltration URLs, and more), scored by severity.
 - **Dependency review**: flags dependencies that come from outside the npm registry (`git:` / `file:` / `link:` / URL) and packages whose names hit suspicious keywords.
 - **Install-script review**: calls out `preinstall` / `install` / `postinstall` scripts — a common supply-chain attack surface.
+- **Declared-permission scoring**: reads the host services each plugin declares it needs (`dsh.plugin.json` `entry.inject` and `package.json` `dsh.client.inject`), tiers each one — model / network / file / process / secret / browser access = high, UI / i18n / config = low, unknown = medium "review it" — and shows a 0–100 permission score with each service listed.
+- **Capability / declaration mismatch flag**: when the code hits high-severity capabilities but every declared service is low-power, the panel and the AI prompt raise a "high capability vs. light declared surface" warning — the strongest over-permission signal, computed deterministically instead of left for the model to infer.
 - **AI online audit**: uses the default model to re-judge each plugin from "claimed features + static code evidence + layered internet reputation", returning a `safe / suspicious / malicious / inconclusive` verdict with recommendations.
 - **Reputation evidence** (multi-source online verification; every lookup is best-effort and degrades gracefully, never blocking the audit):
   - **npm registry metadata**: description, maintainers, publish/update dates, weekly downloads;
@@ -56,9 +58,9 @@ Each third-party plugin gets one row with:
 
 - a **risk badge** (green / yellow / red);
 - the plugin name, version, and whether it is active;
-- its **risk score**, flags, dependencies, and number of files scanned.
+- its **risk score**, flags, **declared permissions**, dependencies, and number of files scanned.
 
-Expanding a row reveals every matched rule with the files that triggered it, suspicious dependencies, and any scan errors.
+Expanding a row reveals every matched rule with the files that triggered it, the **declared host-service permissions** (with a mismatch warning), suspicious dependencies, and any scan errors.
 
 ### AI audit
 
@@ -101,6 +103,19 @@ The top of the panel provides a password-style Token field (never echoed back):
 
 - **Non-registry sources**: dependencies using `git+ / git: / github: / http(s) / file: / link: / relative paths` are flagged.
 - **Suspicious names**: dependencies whose names hit keywords such as `miner / stealer / keylogger / ransomware / trojan / backdoor / infostealer / credential-steal / exfil` are marked.
+
+### Declared-permission scoring
+
+A plugin declares the host services it needs via `dsh.plugin.json` `entry.inject` and `package.json` `dsh.client.inject`. This plugin treats those declarations as a "permission surface" and scores them:
+
+| Tier | Meaning | Typical services |
+| --- | --- | --- |
+| High | can reach the model / network / files / processes / secrets / browser | `llm`, `typert`, `remote`, `api`, `agentDefaultModel`, … |
+| Medium | unrecognized service, defaults to "review it" | any name not in the table above |
+| Low | UI / i18n / config / data-flow only | `locale`, `slots`, `ui-settings`, `renderer`, … |
+
+- **Permission score**: High 40 / Medium 18 / Low 6, capped at 100 (the same weights as the static risk score), **independent of** the green / yellow / red risk level — a supplementary signal only.
+- **Capability / declaration mismatch**: fires when the code hits any high-severity capability AND every declared service is low (it does NOT fire when nothing is declared, to avoid false positives). This is the strongest over-permission signal and is also fed to the AI audit.
 
 ### Scan boundaries
 

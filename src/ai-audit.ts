@@ -86,6 +86,7 @@ const SYSTEM_PROMPT = [
   '- 互联网声誉只作为佐证：知名维护者 / 大量下载 / 正常仓库 / 中立搜索结果可降低疑点；无名新包、混淆代码、可疑安装脚本则提高疑点。尤其「互联网恶意/攻击报告检索」若命中"该插件被举报为恶意 / malware / trojan / backdoor / 供应链攻击 / 后门 / 挖矿"等明确指控，应显著提高判为 "malicious" 或 "suspicious" 的权重；但这些指控也可能是误报、竞品抹黑或营销内容，需结合命中来源的可信度（安全厂商 / 官方公告 / 可信开发者 / 社区讨论）综合判断，不要把单一负面命中直接等同于恶意。声誉信息缺失时不臆造。',
   '- 「已知漏洞/恶意库记录（OSV.dev）」是权威信号：若出现 [恶意] 标记（MAL- 前缀或 "Malicious code/package" 摘要），说明该包已被官方恶意包数据库收录，应强烈倾向判为 "malicious"；若只是普通漏洞（ReDoS、注入等非恶意条目），则作为 "suspicious" 的佐证，并在 recommendations 中给出升级/加固建议；无收录不代表安全。',
   '- GitHub 仓库信号（若提供）：作者账号刚注册、公开仓库极少、仓库极新却 star 异常偏高、或 npm 包与仓库内容明显不符，都是仿冒/钓鱼/刷星的信号，应提高疑点；反之老账号、多仓库、star 与活跃度匹配则降低疑点。注意"短时间内 star 不合理暴涨"与"无其他仓库的新号作者"组合尤其可疑。若 GitHub 查询备注标明该仓库是“按包名从 npm 推断”（插件自身未声明地址），则它很可能只是同名仓库、与该插件无关，其 star/作者/创建时间等不可作为该插件的可信证据，应忽略或仅作弱参考。',
+  '- 「声明的宿主服务权限」反映插件请求宿主注入的服务面：声明的服务越强（模型 / 网络 / 文件 / 进程 / 密钥 / 浏览器），插件默认可接触的宿主资源越多。当代码静态扫描出现高危能力、但声明的宿主服务全部为轻量级（UI / 国际化 / 配置类）时，属于"能力与声明面不匹配"，应显著提高判为 suspicious 或 malicious 的怀疑；未声明宿主服务时不做该推断。',
   '',
   '判定标准：',
   '- "safe": 危险能力属于该插件的合理功能，未发现超出功能的恶意意图。',
@@ -199,6 +200,19 @@ function buildUserPrompt(
     for (const dep of suspicious) lines.push(`- ${dep.name} @ ${dep.version} — ${dep.reason || ''}`)
   } else {
     lines.push('可疑依赖: 无')
+  }
+
+  lines.push('【声明的宿主服务权限】(inject：插件请求宿主注入哪些服务)')
+  if (plugin.permissions.length > 0) {
+    for (const permission of plugin.permissions) {
+      lines.push(`- [${permission.severity}] ${permission.name}: ${permission.label}`)
+    }
+    lines.push(`声明权限风险分: ${plugin.permScore}`)
+  } else {
+    lines.push('- (未声明宿主服务依赖，无法据此判断)')
+  }
+  if (plugin.capabilityMismatch) {
+    lines.push('⚠ 高危能力与声明面不匹配：代码含高危能力，但声明的宿主服务均为轻量级，越权嫌疑较高。')
   }
   lines.push('')
 

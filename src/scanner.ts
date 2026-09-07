@@ -11,7 +11,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import type { DepFinding, PluginAudit, RiskLevel, ScanFlag, SecurityReport, Severity } from './contracts.ts'
+import type { DepFinding, PermissionFinding, PluginAudit, RiskLevel, ScanFlag, SecurityReport, Severity } from './contracts.ts'
 
 /** File extensions treated as source for scanning. */
 const SCAN_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx'])
@@ -170,6 +170,53 @@ function scoreFor(flags: ScanFlag[]): { score: number; risk: RiskLevel } {
   return { score, risk }
 }
 
+/** Keywords implying a declaration lets the plugin reach the host's model/network/files/process/secrets. */
+const POWERFUL_SERVICE = /(llm|agent|model|provider|tool|mcp|remote|typert|api|http|fetch|net|server|univer|file|fs|shell|exec|spawn|process|terminal|command|secret|key|token|credential|browser|sandbox|eval|runtime|storage|database|sql)/
+/** Keywords implying UI / i18n / config / data-flow only. */
+const LIGHT_SERVICE = /(locale|i18n|slot|renderer|theme|setting|config|schema|logger|registry|notification|toast|session|prompt|indexer|watcher)/
+
+/** Normalize a declared service/package id to its bare lowercase name for tier matching. */
+function serviceKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/^@deepseek-ai\//, '')
+    .replace(/^dsh-(?:client-)?(?:ui-)?/, '')
+    .replace(/-/g, '')
+}
+
+/** ponytail: heuristic tier for a declared `inject` entry; unknown defaults to `medium` (review), never `green`. */
+function classifyService(name: string): PermissionFinding {
+  const key = serviceKey(name)
+  if (POWERFUL_SERVICE.test(key)) return { name, severity: 'high', label: '涉及模型 / 网络 / 文件 / 进程 / 凭据 / 浏览器等宿主能力' }
+  if (LIGHT_SERVICE.test(key)) return { name, severity: 'low', label: 'UI / 国际化 / 配置 / 数据流类宿主能力' }
+  return { name, severity: 'medium', label: '未识别的宿主服务，需人工复核' }
+}
+
+/** Read a plugin's declared host-service dependencies without executing any of its code. */
+function collectDeclaredServices(dir: string): string[] {
+  const services = new Set<string>()
+  const readList = (file: string, pick: (root: Record<string, unknown>) => unknown): void => {
+    try {
+      const root = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as Record<string, unknown>
+      const list = pick(root)
+      if (Array.isArray(list)) for (const item of list) if (typeof item === 'string') services.add(item)
+    } catch {
+      /* optional file, or malformed manifest — ignore */
+    }
+  }
+  readList('package.json', root => ((root.dsh as { client?: { inject?: unknown } } | undefined))?.client?.inject)
+  readList('dsh.plugin.json', root => ((root.entry as { inject?: unknown } | undefined))?.inject)
+  return [...services]
+}
+
+function auditPermissions(services: string[]): { permissions: PermissionFinding[]; permScore: number } {
+  const permissions = services.map(classifyService)
+  permissions.sort((a, b) => SEVERITY_SCORE[b.severity] - SEVERITY_SCORE[a.severity] || a.name.localeCompare(b.name))
+  let permScore = 0
+  for (const permission of permissions) permScore += SEVERITY_SCORE[permission.severity]
+  return { permissions, permScore: Math.min(permScore, 100) }
+}
+
 function auditPlugin(nodeModules: string, name: string, spec: string, active: boolean, maxFiles: number): PluginAudit {
   const dir = join(nodeModules, name)
   const errors: string[] = []
@@ -177,6 +224,8 @@ function auditPlugin(nodeModules: string, name: string, spec: string, active: bo
   let flags: ScanFlag[] = []
   let dependencies: DepFinding[] = []
   let scannedFiles = 0
+  let permissions: PermissionFinding[] = []
+  let permScore = 0
 
   if (!existsSync(dir)) {
     errors.push('目录不存在（可能被 pnpm 提升或未安装）')
@@ -189,10 +238,17 @@ function auditPlugin(nodeModules: string, name: string, spec: string, active: bo
       flags.push(...scan.flags)
       scannedFiles = scan.scannedFiles
       dependencies = reviewDependencies(pkg)
+      const perms = auditPermissions(collectDeclaredServices(dir))
+      permissions = perms.permissions
+      permScore = perms.permScore
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
     }
   }
+
+  const capabilityMismatch = flags.some(flag => flag.severity === 'high')
+    && permissions.length > 0
+    && !permissions.some(permission => permission.severity === 'high')
 
   const { score, risk } = scoreFor(flags)
   const merged = new Map<string, ScanFlag>()
@@ -215,6 +271,9 @@ function auditPlugin(nodeModules: string, name: string, spec: string, active: bo
     flags: [...merged.values()].sort((a, b) => SEVERITY_SCORE[b.severity] - SEVERITY_SCORE[a.severity] || a.code.localeCompare(b.code)),
     dependencies,
     scannedFiles,
+    permissions,
+    permScore,
+    capabilityMismatch,
     errors,
   }
 }

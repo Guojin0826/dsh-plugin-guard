@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Declared host-service permission scoring**: the static audit now reads each
+  plugin's declared `inject` services (`dsh.plugin.json` `entry.inject` and
+  `package.json` `dsh.client.inject`), tiers each one (model / network / file /
+  process / secret / browser access = high; UI / i18n / config = low; unknown =
+  medium "review it"), and reports a 0–100 `permScore` alongside the listed
+  services. The tiering is a documented heuristic — an unrecognized service is
+  never defaulted to "ok".
+- **Capability / declaration mismatch flag**: when a plugin's code hits
+  high-severity capabilities but every declared service is low-power, the panel
+  and the AI prompt raise a "high capability vs. light declared surface"
+  warning. It does not fire when nothing is declared, so absence of a manifest
+  is never treated as evidence.
+
+### Changed
+
+- The AI audit prompt now receives the declared-permission list, the permission
+  score, and the mismatch flag, grounding its "capability vs. claimed purpose"
+  judgment in the plugin's own declared host-service surface.
+- Internal cleanup: removed the dead `searchResults` reputation field and the
+  duplicated empty-GitHub literal (no behavior change).
+
+### Fixed
+
+- Reasoning models (e.g. `deepseek-v4-pro`) that emit a ` thinking…` block
+  before the JSON no longer trigger a first-parse failure: reasoning blocks
+  (` thinking` / `<thinking>` / `<reasoning>` / `<scratchpad>`) are stripped
+  before locating the JSON object, so the first pass parses directly instead of
+  burning a strict-retry round.
+
 ## [0.2.0] - 2026-09-05
 
 ### Added

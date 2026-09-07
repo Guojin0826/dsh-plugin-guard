@@ -31,6 +31,15 @@ export interface DepFinding {
   readonly reason?: string
 }
 
+/** One declared host-service dependency (`inject` entry) with its power tier. */
+export interface PermissionFinding {
+  /** Raw service name / package id as declared, e.g. `llm` or `@deepseek-ai/dsh-api-remotes`. */
+  readonly name: string
+  readonly severity: Severity
+  /** Plain-language note on what this grants. */
+  readonly label: string
+}
+
 /** Per-plugin audit result. */
 export interface PluginAudit {
   readonly name: string
@@ -45,6 +54,12 @@ export interface PluginAudit {
   readonly flags: ScanFlag[]
   readonly dependencies: DepFinding[]
   readonly scannedFiles: number
+  /** Declared host-service dependencies (`entry.inject` + `dsh.client.inject`), each power-tiered. */
+  readonly permissions: PermissionFinding[]
+  /** 0–100 weighted score of declared host-service power (same weights as the static score). */
+  readonly permScore: number
+  /** True when code has high-severity capabilities but the plugin only declares low-power services. */
+  readonly capabilityMismatch: boolean
   readonly errors: string[]
 }
 
@@ -77,6 +92,12 @@ export const depFindingSchema = z.object({
   reason: z.string().optional(),
 }).readonly()
 
+export const permissionFindingSchema = z.object({
+  name: z.string().min(1),
+  severity: severitySchema,
+  label: z.string().min(1),
+}).readonly()
+
 export const pluginAuditSchema = z.object({
   name: z.string().min(1),
   version: z.string(),
@@ -87,6 +108,9 @@ export const pluginAuditSchema = z.object({
   flags: z.array(scanFlagSchema),
   dependencies: z.array(depFindingSchema),
   scannedFiles: z.number(),
+  permissions: z.array(permissionFindingSchema),
+  permScore: z.number(),
+  capabilityMismatch: z.boolean(),
   errors: z.array(z.string()),
 }).readonly()
 

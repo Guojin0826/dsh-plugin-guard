@@ -53,6 +53,16 @@ function FlagRow({ flag }: { flag: PluginAudit['flags'][number] }): ReactElement
   )
 }
 
+function PermissionRow({ permission }: { permission: PluginAudit['permissions'][number] }): ReactElement {
+  const sevColor = permission.severity === 'high' ? palette.red : permission.severity === 'medium' ? palette.yellow : '#444'
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '4px 0' }}>
+      <code style={{ fontSize: 12, color: sevColor, fontWeight: 600 }}>{permission.name}</code>
+      <span style={{ fontSize: 13 }}>{permission.label}</span>
+    </div>
+  )
+}
+
 type AiState = {
   loading: boolean
   result: AiAuditResult | null
@@ -297,6 +307,20 @@ function PluginRow({ plugin, t, aiState, onAudit }: {
           {plugin.flags.length === 0
             ? <div style={{ fontSize: 13, color: palette.mute }}>{t('noFlags')}</div>
             : plugin.flags.map(flag => <FlagRow key={flag.code} flag={flag} />)}
+        </div>
+
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{t('perms')} ({plugin.permissions.length}){plugin.permissions.length > 0 ? ` · ${t('colScore')}: ${plugin.permScore}` : ''}</div>
+          {plugin.permissions.length === 0
+            ? <div style={{ fontSize: 13, color: palette.mute }}>{t('noPerms')}</div>
+            : (
+              <div>
+                {plugin.permissions.map(permission => <PermissionRow key={permission.name} permission={permission} />)}
+                {plugin.capabilityMismatch && (
+                  <div style={{ fontSize: 12, color: palette.red, fontWeight: 600, marginTop: 4 }}>⚠ {t('permMismatch')}</div>
+                )}
+              </div>
+            )}
         </div>
 
         <div>
