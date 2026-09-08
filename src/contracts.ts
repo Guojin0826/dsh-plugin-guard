@@ -400,6 +400,30 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     },
   },
   {
+    id: 'dsh-plugin-guard#guard/forceAiAudit',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'forceAiAudit',
+    invocation: { kind: 'direct' },
+    parameters: [
+      {
+        name: 'pluginName',
+        wire: 'pluginName',
+        source: 'json',
+        codec: {
+          mode: 'strict',
+          typeSymbol: 'dsh-plugin-guard#guard/forceAiAudit:pluginName',
+          schema: z.string().min(1),
+        },
+      },
+    ],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#AiAuditResult',
+      schema: aiAuditResultSchema,
+    },
+  },
+  {
     id: 'dsh-plugin-guard#guard/getAiAuditStatus',
     service: 'guard',
     namespace: 'guard',

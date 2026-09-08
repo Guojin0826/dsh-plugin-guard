@@ -220,6 +220,16 @@ export class GuardRuntime extends TypertRemoteService {
   /** Assess one plugin: always refresh live reputation, then reuse the cached verdict only when the fingerprint is unchanged, within TTL, and no new negative reputation signal appeared. */
   @Remote
   async getAiAudit(pluginName: string): Promise<AiAuditResult> {
+    return this.runAiAudit(pluginName, false)
+  }
+
+  /** Bypass the verdict cache and always run a full model audit for one plugin (reputation still fetched fresh). */
+  @Remote
+  async forceAiAudit(pluginName: string): Promise<AiAuditResult> {
+    return this.runAiAudit(pluginName, true)
+  }
+
+  private async runAiAudit(pluginName: string, force: boolean): Promise<AiAuditResult> {
     this.track(pluginName, 'collecting', '正在定位插件并运行静态扫描…')
     try {
       const profileDir = this.profileDir()
@@ -245,7 +255,7 @@ export class GuardRuntime extends TypertRemoteService {
         : (Date.now() - new Date(entry.cachedAt).getTime()) / 3_600_000
       const withinTtl = cache.ttlHours > 0 && Number.isFinite(ageHours) && ageHours >= 0 && ageHours < cache.ttlHours
 
-      if (entry !== undefined && withinTtl) {
+      if (!force && entry !== undefined && withinTtl) {
         if (hasNewNegativeSignal(entry.result.reputation, freshReputation)) {
           emit('researching', '发现新的负面声誉信号，忽略缓存、强制重审…')
         } else {

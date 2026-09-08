@@ -6,6 +6,7 @@ import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, Github
 export interface SecuritySectionInjected {
   getReport: () => Promise<SecurityReport>
   getAiAudit: (pluginName: string) => Promise<AiAuditResult>
+  forceAiAudit: (pluginName: string) => Promise<AiAuditResult>
   getAiAuditStatus: (pluginName: string) => Promise<AuditProgress | null>
   getGithubTokenStatus: () => Promise<GithubTokenStatus>
   setGithubToken: (token: string) => Promise<GithubTokenStatus>
@@ -286,11 +287,12 @@ function AiAuditBox({ state, t }: { state: AiState; t: (key: string) => string }
   )
 }
 
-function PluginRow({ plugin, t, aiState, onAudit, delta }: {
+function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
   plugin: PluginAudit
   t: (key: string) => string
   aiState: AiState
   onAudit: () => void
+  onForceAudit: () => void
   delta?: PluginDelta
 }): ReactElement {
   const badge = (
@@ -388,22 +390,40 @@ function PluginRow({ plugin, t, aiState, onAudit, delta }: {
         <div style={{ fontSize: 12, color: palette.mute }}>{t('filesScanned')}: {plugin.scannedFiles}</div>
 
         <div style={{ borderTop: `1px dashed ${palette.border}`, paddingTop: 10 }}>
-          <button
-            type="button"
-            disabled={aiState.loading}
-            onClick={onAudit}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 6,
-              border: `1px solid ${palette.border}`,
-              background: '#fff',
-              cursor: aiState.loading ? 'default' : 'pointer',
-              fontSize: 13,
-              opacity: aiState.loading ? 0.6 : 1,
-            }}
-          >
-            {aiState.loading ? t('aiAuditing') : t('aiAudit')}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={aiState.loading}
+              onClick={onAudit}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: `1px solid ${palette.border}`,
+                background: '#fff',
+                cursor: aiState.loading ? 'default' : 'pointer',
+                fontSize: 13,
+                opacity: aiState.loading ? 0.6 : 1,
+              }}
+            >
+              {aiState.loading ? t('aiAuditing') : t('aiAudit')}
+            </button>
+            <button
+              type="button"
+              disabled={aiState.loading}
+              onClick={onForceAudit}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: `1px solid ${palette.border}`,
+                background: '#fff',
+                cursor: aiState.loading ? 'default' : 'pointer',
+                fontSize: 13,
+                opacity: aiState.loading ? 0.6 : 1,
+              }}
+            >
+              {t('aiForceAudit')}
+            </button>
+          </div>
           <AiAuditBox state={aiState} t={t} />
         </div>
       </div>
@@ -411,7 +431,7 @@ function PluginRow({ plugin, t, aiState, onAudit, delta }: {
   )
 }
 
-export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement {
+export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement {
   const [report, setReport] = useState<SecurityReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -532,7 +552,7 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
     }
   }
 
-  const runAi = async (pluginName: string): Promise<void> => {
+  const runAiWith = async (pluginName: string, invoke: (name: string) => Promise<AiAuditResult>): Promise<void> => {
     setAiState(pluginName, { loading: true, result: null, error: null, progress: { phase: 'collecting', detail: t('aiStarting') } })
     // Poll live progress so the user can see the audit phase + what is audited.
     const poll = setInterval(() => {
@@ -545,7 +565,7 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
         .catch(() => { /* poll errors are non-fatal; the audit RPC still reports the final failure */ })
     }, 1200)
     try {
-      const result = await getAiAudit(pluginName)
+      const result = await invoke(pluginName)
       clearInterval(poll)
       setAiState(pluginName, { loading: false, result, error: null, progress: null })
     } catch (cause) {
@@ -554,6 +574,9 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
       setAiState(pluginName, { loading: false, result: null, error: message, progress: null })
     }
   }
+
+  const runAi = async (pluginName: string): Promise<void> => { await runAiWith(pluginName, getAiAudit) }
+  const runAiForce = async (pluginName: string): Promise<void> => { await runAiWith(pluginName, forceAiAudit) }
 
   useEffect(() => { void run() }, [])
 
@@ -694,6 +717,7 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
                   t={t}
                   aiState={getAiState(plugin.name)}
                   onAudit={() => { void runAi(plugin.name) }}
+                  onForceAudit={() => { void runAiForce(plugin.name) }}
                   delta={deltaMap.get(plugin.name)}
                 />
               ))}

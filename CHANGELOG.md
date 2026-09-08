@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (a new OSV advisory, a new malicious/attack web report, or a new deprecation).
   Any such addition discards the cache and forces a full re-audit. The panel
   exposes the TTL (0 disables the cache) and marks served verdicts "from cache".
+- **Per-plugin force re-audit**: a 强制重审 / Force re-audit button next to each
+  plugin's AI audit bypasses that plugin's cached verdict for one run, without
+  changing the global TTL or audit config.
 
 ### Changed
 

@@ -88,6 +88,7 @@ export const zh: Record<string, string> = {
   ttlInvalid: '请输入 ≥ 0 的整数小时',
   ttlDisabled: '缓存已关闭',
   cacheHit: '来自缓存',
+  aiForceAudit: '强制重审',
 }
 
 export const en: Record<string, string> = {
@@ -155,6 +156,7 @@ export const en: Record<string, string> = {
   ttlInvalid: 'Enter a non-negative whole number of hours',
   ttlDisabled: 'cache disabled',
   cacheHit: 'from cache',
+  aiForceAudit: 'Force re-audit',
   aiMaintainers: 'Maintainers',
   aiWebReports: 'Web malicious/attack reports',
   aiWebNoReports: 'No malicious/attack reports found for this plugin',

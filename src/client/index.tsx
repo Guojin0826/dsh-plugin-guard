@@ -24,6 +24,7 @@ type RemoteOutcome<T> = { ok: true; value: T } | { ok: false; error: { code: str
 interface GuardFace {
   getReport(): Promise<RemoteOutcome<SecurityReport>>
   getAiAudit(pluginName: string): Promise<RemoteOutcome<AiAuditResult>>
+  forceAiAudit(pluginName: string): Promise<RemoteOutcome<AiAuditResult>>
   getAiAuditStatus(pluginName: string): Promise<RemoteOutcome<AuditProgress | null>>
   getGithubTokenStatus(): Promise<RemoteOutcome<GithubTokenStatus>>
   setGithubToken(token: string): Promise<RemoteOutcome<GithubTokenStatus>>
@@ -64,6 +65,12 @@ export function apply(ctx: ClientContext): void {
       getAiAudit: async (pluginName: string) => {
         if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
         const result = await guard.getAiAudit(pluginName)
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      forceAiAudit: async (pluginName: string) => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.forceAiAudit(pluginName)
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         return result.value
       },

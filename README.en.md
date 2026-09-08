@@ -72,7 +72,7 @@ Every plugin row has an **AI Audit** button. Clicking it:
 
 Audit results persist: closing and reopening the settings panel still shows finished (or in-flight) results.
 
-**Result cache**: the *verdict* is written to a local cache (content fingerprint + version + TTL, default 72 h = 3 days), while the **reputation evidence (npm / OSV / web / GitHub) is re-fetched fresh on every run**. The cached verdict is reused — marked "from cache" — only while source, manifest, and README are unchanged, within TTL, and the fresh reputation has no new negative signal (a new advisory, a new malicious report, or a new deprecation); any new signal discards the cache and forces a re-audit. The panel has an **AI cache TTL** field to change the hours; setting it to 0 disables the cache.
+**Result cache**: the *verdict* is written to a local cache (content fingerprint + version + TTL, default 72 h = 3 days), while the **reputation evidence (npm / OSV / web / GitHub) is re-fetched fresh on every run**. The cached verdict is reused — marked "from cache" — only while source, manifest, and README are unchanged, within TTL, and the fresh reputation has no new negative signal (a new advisory, a new malicious report, or a new deprecation); any new signal discards the cache and forces a re-audit. The panel has an **AI cache TTL** field to change the hours; setting it to 0 disables the cache. A **Force re-audit** button next to each plugin's AI audit bypasses that plugin's cache for one run without changing the global TTL.
 
 ### GitHub Token (optional)
 
