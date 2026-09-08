@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     "cool-down" insight that malware is published → exploited → removed within
     days) and surfaces the npm `deprecated` message; both feed the AI prompt as
     legitimacy priors and are shown in the panel.
+- **AI-audit verdict cache (content fingerprint + version + TTL, live reputation)**:
+  each completed *verdict* is persisted (`$DSH_HOME/storages/dsh-plugin-guard/ai-cache.json`)
+  keyed by a SHA-256 fingerprint of everything the audit reads (version,
+  package.json, dsh.plugin.json, README, scanned source). On re-run the live
+  reputation layer (npm / OSV / web / GitHub) is **always re-fetched fresh**; the
+  cached verdict is reused only while the fingerprint is unchanged, under the
+  TTL (default 72 h), and the fresh reputation carries **no new negative signal**
+  (a new OSV advisory, a new malicious/attack web report, or a new deprecation).
+  Any such addition discards the cache and forces a full re-audit. The panel
+  exposes the TTL (0 disables the cache) and marks served verdicts "from cache".
 
 ### Changed
 

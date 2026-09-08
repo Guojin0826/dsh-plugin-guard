@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { GUARD_REMOTE } from './remote.ts'
 import { SecuritySection, type SecuritySectionInjected } from './SecurityReportPanel.tsx'
 import { NS, zh, en } from './locales.ts'
-import type { AiAuditResult, AuditProgress, GithubTokenStatus, SecurityReport } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SecurityReport } from '../contracts.ts'
 
 /** Required services: the Remote face, the slot registry, and locale. */
 export const inject = ['remote', 'slots', 'locale']
@@ -27,6 +27,8 @@ interface GuardFace {
   getAiAuditStatus(pluginName: string): Promise<RemoteOutcome<AuditProgress | null>>
   getGithubTokenStatus(): Promise<RemoteOutcome<GithubTokenStatus>>
   setGithubToken(token: string): Promise<RemoteOutcome<GithubTokenStatus>>
+  getAuditConfig(): Promise<RemoteOutcome<AuditCacheConfig>>
+  setAuditTtl(ttlHours: number): Promise<RemoteOutcome<AuditCacheConfig>>
 }
 
 /** Compose the security-report surface. */
@@ -80,6 +82,18 @@ export function apply(ctx: ClientContext): void {
       setGithubToken: async (token: string) => {
         if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
         const result = await guard.setGithubToken(token)
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      getAuditConfig: async () => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.getAuditConfig()
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      setAuditTtl: async (ttlHours: number) => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.setAuditTtl(ttlHours)
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         return result.value
       },

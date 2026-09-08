@@ -1,7 +1,7 @@
 /** Settings section rendering the plugin security audit report (green/yellow/red) plus per-plugin AI audit with live progress. */
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useReducer, useState, type ReactElement } from 'react'
-import type { AiAuditResult, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SecurityReport } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SecurityReport } from '../contracts.ts'
 
 export interface SecuritySectionInjected {
   getReport: () => Promise<SecurityReport>
@@ -9,6 +9,8 @@ export interface SecuritySectionInjected {
   getAiAuditStatus: (pluginName: string) => Promise<AuditProgress | null>
   getGithubTokenStatus: () => Promise<GithubTokenStatus>
   setGithubToken: (token: string) => Promise<GithubTokenStatus>
+  getAuditConfig: () => Promise<AuditCacheConfig>
+  setAuditTtl: (ttlHours: number) => Promise<AuditCacheConfig>
 }
 
 type SecuritySectionProps = InjectFace<SecuritySectionInjected> & PropsLocale<'dsh-plugin-guard'>
@@ -260,6 +262,7 @@ function AiAuditBox({ state, t }: { state: AiState; t: (key: string) => string }
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <span style={{ fontWeight: 700, fontSize: 13, color: riskColor(result.risk) }}>{t('aiVerdict')}: {t(VERDICT_KEY[result.verdict])}</span>
         <span style={{ fontSize: 11, color: palette.mute }}>{t('aiModel')}: {result.provider}/{result.model}</span>
+        {result.cached === true && <span style={{ fontSize: 11, color: palette.mute, fontWeight: 600 }}>⟳ {t('cacheHit')}</span>}
       </div>
       <div style={{ fontSize: 13, marginTop: 6, whiteSpace: 'pre-wrap' }}>{result.summary}</div>
       {result.concerns.length > 0 && (
@@ -408,7 +411,7 @@ function PluginRow({ plugin, t, aiState, onAudit, delta }: {
   )
 }
 
-export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGithubTokenStatus, setGithubToken, t }: SecuritySectionProps): ReactElement {
+export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement {
   const [report, setReport] = useState<SecurityReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -420,6 +423,13 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
   const [tokenBusy, setTokenBusy] = useState(false)
   const [tokenError, setTokenError] = useState<string | null>(null)
   const [tokenSaved, setTokenSaved] = useState(false)
+
+  // AI-audit cache TTL form state (hours; 0 disables the cache).
+  const [ttl, setTtl] = useState<number | null>(null)
+  const [ttlDraft, setTtlDraft] = useState('')
+  const [ttlBusy, setTtlBusy] = useState(false)
+  const [ttlError, setTtlError] = useState<string | null>(null)
+  const [ttlSaved, setTtlSaved] = useState(false)
 
   // Re-render whenever the module-level AI store changes (results survive unmount).
   useEffect(() => subscribeAi(forceRender), [])
@@ -437,6 +447,45 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
     })()
     return () => { disposed = true }
   }, [getGithubTokenStatus])
+
+  // Load the current cache TTL once on mount.
+  useEffect(() => {
+    let disposed = false
+    void (async () => {
+      try {
+        const config = await getAuditConfig()
+        if (!disposed) {
+          setTtl(config.ttlHours)
+          setTtlDraft(String(config.ttlHours))
+        }
+      } catch (cause) {
+        if (!disposed) setTtlError(cause instanceof Error ? cause.message : String(cause))
+      }
+    })()
+    return () => { disposed = true }
+  }, [getAuditConfig])
+
+  const saveTtl = async (): Promise<void> => {
+    if (ttlBusy) return
+    const value = Number(ttlDraft)
+    if (ttlDraft.trim() === '' || !Number.isInteger(value) || value < 0) {
+      setTtlError(t('ttlInvalid'))
+      return
+    }
+    setTtlBusy(true)
+    setTtlError(null)
+    setTtlSaved(false)
+    try {
+      const config = await setAuditTtl(value)
+      setTtl(config.ttlHours)
+      setTtlDraft(String(config.ttlHours))
+      setTtlSaved(true)
+    } catch (cause) {
+      setTtlError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setTtlBusy(false)
+    }
+  }
 
   const saveToken = async (): Promise<void> => {
     if (tokenBusy) return
@@ -580,6 +629,37 @@ export function SecuritySection({ getReport, getAiAudit, getAiAuditStatus, getGi
         </div>
         {tokenSaved && <div style={{ marginTop: 6, fontSize: 12, color: palette.green }}>{t('tokenSaved')}</div>}
         {tokenError !== null && <div style={{ marginTop: 6, fontSize: 12, color: palette.red }}>{t('loadError')}: {tokenError}</div>}
+      </div>
+
+      <div style={{ marginTop: 12, padding: '12px 14px', border: `1px solid ${palette.border}`, borderRadius: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{t('ttlLabel')}</span>
+          {ttl !== null && <span style={{ fontSize: 12, color: palette.mute }}>{t('ttlValue')}: {ttl} {t('ttlHoursUnit')}{ttl === 0 ? ` · ${t('ttlDisabled')}` : ''}</span>}
+        </div>
+        <p style={{ fontSize: 12, color: palette.mute, margin: '4px 0 8px' }}>{t('ttlHint')}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={ttlDraft}
+            onChange={event => setTtlDraft(event.target.value)}
+            style={{ width: 110, padding: '6px 10px', borderRadius: 6, border: `1px solid ${palette.border}`, fontSize: 13 }}
+          />
+          <button
+            type="button"
+            disabled={ttlBusy}
+            onClick={() => { void saveTtl() }}
+            style={{
+              padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: '#fff',
+              cursor: ttlBusy ? 'default' : 'pointer', fontSize: 13, opacity: ttlBusy ? 0.6 : 1,
+            }}
+          >
+            {t('ttlSave')}
+          </button>
+          {ttlSaved && <span style={{ fontSize: 12, color: palette.green }}>{t('ttlSaved')}</span>}
+          {ttlError !== null && <span style={{ fontSize: 12, color: palette.red }}>{ttlError}</span>}
+        </div>
       </div>
 
       {error !== null && (

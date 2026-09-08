@@ -800,6 +800,45 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
   return context
 }
 
+/** Keys of the "negative" reputation signals a cached verdict must be re-checked against. */
+function negativeFootprint(reputation: ReputationEvidence): string[] {
+  const keys: string[] = []
+  for (const advisory of reputation.advisories) keys.push('adv:' + advisory.id)
+  for (const hit of reputation.webSearchHits) keys.push('web:' + hit.url)
+  if (reputation.npmDeprecated !== '') keys.push('deprecated:' + reputation.npmDeprecated)
+  return keys
+}
+
+/**
+ * True when the fresh reputation carries a negative signal the cached verdict
+ * never saw: a new OSV advisory, a new relevance-filtered malicious/attack web
+ * report, or a newly-applied npm deprecation. Any of these invalidates the
+ * cached verdict because its "safe" judgment was made without that evidence.
+ */
+export function hasNewNegativeSignal(cached: ReputationEvidence, fresh: ReputationEvidence): boolean {
+  const known = new Set(negativeFootprint(cached))
+  return negativeFootprint(fresh).some(key => !known.has(key))
+}
+
+/**
+ * Fetch the live reputation layer (npm registry + OSV + web search + GitHub)
+ * for one plugin. Cheap and deterministic enough to refresh on every audit,
+ * even when the model verdict itself is served from the cache.
+ */
+export async function fetchPluginReputation(
+  plugin: PluginAudit,
+  metadata: PluginMetadata,
+  githubToken: string,
+  emit: (phase: AuditPhase, detail: string) => void,
+): Promise<ReputationEvidence> {
+  emit('researching', '联网查询 npm 声誉与搜索结果…')
+  const reputation = await lookupPluginReputation(plugin.name)
+  emit('researching', '查询 GitHub 仓库与作者账号信息…')
+  const resolvedRepo = resolvePluginRepo(metadata, reputation.npmRepository, plugin.name)
+  reputation.github = await lookupGithubRepo(resolvedRepo.url, githubToken, resolvedRepo.fromOwnContent)
+  return reputation
+}
+
 /**
  * Audit one plugin with the default model, layered with the plugin's stated
  * purpose and internet-reputation context so the model judges capability vs.
@@ -813,6 +852,7 @@ export async function auditPluginWithAi(
   profileDir: string,
   githubToken: string,
   onProgress?: (phase: AuditPhase, detail: string) => void,
+  prefetchedReputation?: ReputationEvidence,
 ): Promise<AiAuditResult> {
   const guardCtx = ctx as unknown as GuardContext
   const logger = (ctx as unknown as { logger?: { info?: (line: string) => void } }).logger
@@ -838,13 +878,8 @@ export async function auditPluginWithAi(
   const metadata = collectPluginMetadata(pluginDir)
   if (metadata.description !== '') emit('collecting', `插件自述功能：${metadata.description.slice(0, 80)}`)
 
-  emit('researching', '联网查询 npm 声誉与搜索结果…')
-  const reputation = await lookupPluginReputation(plugin.name)
-
-  emit('researching', '查询 GitHub 仓库与作者账号信息…')
-  const resolvedRepo = resolvePluginRepo(metadata, reputation.npmRepository, plugin.name)
-  const github = await lookupGithubRepo(resolvedRepo.url, githubToken, resolvedRepo.fromOwnContent)
-  reputation.github = github
+  const reputation = prefetchedReputation ?? await fetchPluginReputation(plugin, metadata, githubToken, emit)
+  const github = reputation.github
   const githubSummary = github.fullName !== ''
     ? `GitHub: ${github.fullName} ⭐${github.stars >= 0 ? String(github.stars) : '?'}`
     : 'GitHub: 未解析到仓库'
@@ -900,6 +935,7 @@ export async function auditPluginWithAi(
     provider: selection.provider,
     model: selection.model,
     generatedAt: new Date().toISOString(),
+    cached: false,
     reputation,
   }
 }

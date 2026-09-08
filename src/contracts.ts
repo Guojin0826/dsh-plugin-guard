@@ -240,6 +240,8 @@ export interface AiAuditResult extends AiAssessment {
   readonly provider: string
   readonly model: string
   readonly generatedAt: string
+  /** True when served from the content-fingerprint cache rather than a fresh model call. */
+  readonly cached: boolean
   readonly reputation: ReputationEvidence
 }
 
@@ -309,6 +311,7 @@ export const aiAuditResultSchema = z.object({
   concerns: z.array(z.string()),
   recommendations: z.array(z.string()),
   generatedAt: z.string().min(1),
+  cached: z.boolean(),
   reputation: reputationEvidenceSchema,
 }).readonly()
 
@@ -345,6 +348,16 @@ export interface GithubTokenStatus {
 
 export const githubTokenStatusSchema = z.object({
   configured: z.boolean(),
+}).readonly()
+
+/** Cache settings for the AI-audit result cache (content fingerprint + version + TTL). */
+export interface AuditCacheConfig {
+  /** Hours a cached verdict stays fresh before a forced re-audit; 0 disables the cache. */
+  readonly ttlHours: number
+}
+
+export const auditCacheConfigSchema = z.object({
+  ttlHours: z.number().min(0),
 }).readonly()
 
 /** The plugin-guard Remote namespace's strict invocation descriptors. */
@@ -445,6 +458,43 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
       mode: 'strict',
       typeSymbol: 'dsh-plugin-guard#GithubTokenStatus',
       schema: githubTokenStatusSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/getAuditConfig',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'getAuditConfig',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#AuditCacheConfig',
+      schema: auditCacheConfigSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/setAuditTtl',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'setAuditTtl',
+    invocation: { kind: 'direct' },
+    parameters: [
+      {
+        name: 'ttlHours',
+        wire: 'ttlHours',
+        source: 'json',
+        codec: {
+          mode: 'strict',
+          typeSymbol: 'dsh-plugin-guard#guard/setAuditTtl:ttlHours',
+          schema: z.number().min(0),
+        },
+      },
+    ],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#AuditCacheConfig',
+      schema: auditCacheConfigSchema,
     },
   },
 ]

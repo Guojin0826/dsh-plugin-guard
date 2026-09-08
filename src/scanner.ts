@@ -9,6 +9,7 @@
  * manifests to surface red flags; it can never re-sandbox code that the loader
  * has already executed at `import()` time.
  */
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { DepFinding, PermissionFinding, PluginAudit, PluginDelta, RiskLevel, ScanFlag, SecurityReport, Severity } from './contracts.ts'
@@ -582,4 +583,53 @@ export function computePluginDeltas(plugins: PluginAudit[], baseline: BaselineSn
     }
   }
   return deltas
+}
+
+/**
+ * Content fingerprint of everything the AI audit actually reads for one plugin:
+ * version, package.json, dsh.plugin.json, README, and every scanned source file.
+ * Equal fingerprints mean identical audit inputs, so a cached verdict stays valid.
+ * Hashing is content-based (not flag-based), so even a one-byte source change
+ * invalidates the fingerprint and forces a re-audit.
+ */
+export function computePluginFingerprint(pluginDir: string, version: string): string {
+  const hash = createHash('sha256')
+  hash.update('version\0' + version + '\0')
+
+  for (const name of ['package.json', 'dsh.plugin.json']) {
+    hash.update(name + '\0')
+    try {
+      hash.update(readFileSync(join(pluginDir, name), 'utf-8'))
+    } catch {
+      hash.update('<absent>')
+    }
+  }
+
+  for (const candidate of ['README.md', 'README', 'readme.md', 'README.txt', 'readme.txt', 'Readme.md']) {
+    const path = join(pluginDir, candidate)
+    if (!existsSync(path)) continue
+    hash.update('readme\0')
+    try {
+      hash.update(readFileSync(path, 'utf-8'))
+    } catch {
+      hash.update('<unreadable>')
+    }
+    break
+  }
+
+  for (const file of walkSource(pluginDir, 0, 5)) {
+    try {
+      if (statSync(file).size > MAX_FILE_BYTES) continue
+    } catch {
+      continue
+    }
+    hash.update('file\0' + relative(pluginDir, file) + '\0')
+    try {
+      hash.update(readFileSync(file, 'utf-8'))
+    } catch {
+      hash.update('<unreadable>')
+    }
+  }
+
+  return hash.digest('hex')
 }

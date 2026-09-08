@@ -7,9 +7,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { auditPluginWithAi } from './ai-audit.ts'
-import { buildBaseline, computePluginDeltas, runAudit, type BaselineSnapshot } from './scanner.ts'
-import type { AiAuditResult, AuditProgress, GithubTokenStatus, PluginAudit, SecurityReport } from './contracts.ts'
+import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal } from './ai-audit.ts'
+import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SecurityReport } from './contracts.ts'
 
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
@@ -19,6 +19,22 @@ export interface ResolvedConfig {
   maxScanFiles: number
   /** Optional GitHub PAT for authenticated repo/owner lookups; empty = anonymous. */
   githubToken: string
+}
+
+/** Hours a fresh AI verdict stays cached before a forced re-audit (overridable in the panel). */
+const DEFAULT_TTL_HOURS = 72
+
+/** One cached AI-audit verdict, keyed by its content fingerprint. */
+interface AiCacheEntry {
+  readonly fingerprint: string
+  readonly cachedAt: string
+  readonly result: AiAuditResult
+}
+
+/** On-disk shape of the AI-audit result cache. */
+interface AiCacheFile {
+  ttlHours: number
+  plugins: Record<string, AiCacheEntry>
 }
 
 export class GuardRuntime extends TypertRemoteService {
@@ -131,6 +147,67 @@ export class GuardRuntime extends TypertRemoteService {
     }
   }
 
+  /** File holding the persisted AI-audit result cache (best-effort, Host-local). */
+  private aiCacheFile(): string {
+    const dir = this.tokenDir()
+    return dir === '' ? '' : join(dir, 'ai-cache.json')
+  }
+
+  private loadAiCache(): AiCacheFile {
+    const file = this.aiCacheFile()
+    const fallback: AiCacheFile = { ttlHours: DEFAULT_TTL_HOURS, plugins: {} }
+    if (file === '') return fallback
+    try {
+      const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>
+      const ttlHours = typeof raw.ttlHours === 'number' && Number.isFinite(raw.ttlHours) && raw.ttlHours >= 0 ? raw.ttlHours : DEFAULT_TTL_HOURS
+      const plugins: Record<string, AiCacheEntry> = {}
+      const rawPlugins = raw.plugins
+      if (rawPlugins !== null && typeof rawPlugins === 'object') {
+        for (const [name, entry] of Object.entries(rawPlugins as Record<string, unknown>)) {
+          if (entry === null || typeof entry !== 'object') continue
+          const record = entry as Record<string, unknown>
+          if (typeof record.fingerprint !== 'string' || typeof record.cachedAt !== 'string' || record.result === null || typeof record.result !== 'object') continue
+          plugins[name] = {
+            fingerprint: record.fingerprint,
+            cachedAt: record.cachedAt,
+            result: record.result as unknown as AiAuditResult,
+          }
+        }
+      }
+      return { ttlHours, plugins }
+    } catch {
+      return fallback
+    }
+  }
+
+  private saveAiCache(cache: AiCacheFile): void {
+    const file = this.aiCacheFile()
+    if (file === '') return
+    try {
+      mkdirSync(this.tokenDir(), { recursive: true })
+      writeFileSync(file, JSON.stringify(cache), 'utf-8')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[plugin-guard] 无法持久化 AI 审计缓存: ${message}`)
+    }
+  }
+
+  /** Current AI-audit cache TTL in hours (0 disables the cache). */
+  @Remote
+  async getAuditConfig(): Promise<AuditCacheConfig> {
+    return { ttlHours: this.loadAiCache().ttlHours }
+  }
+
+  /** Set the AI-audit cache TTL in hours (0 disables the cache) and persist it. */
+  @Remote
+  async setAuditTtl(ttlHours: number): Promise<AuditCacheConfig> {
+    const next = typeof ttlHours === 'number' && Number.isFinite(ttlHours) && ttlHours >= 0 ? Math.floor(ttlHours) : DEFAULT_TTL_HOURS
+    const cache = this.loadAiCache()
+    cache.ttlHours = next
+    this.saveAiCache(cache)
+    return { ttlHours: next }
+  }
+
   /** Run a fresh static audit, diff it against the previous scan's baseline, then persist the new baseline. */
   @Remote
   async getReport(): Promise<SecurityReport> {
@@ -140,19 +217,47 @@ export class GuardRuntime extends TypertRemoteService {
     return { ...report, deltas }
   }
 
-  /** Ask the default model to assess one plugin against both the static scan and source evidence. */
+  /** Assess one plugin: always refresh live reputation, then reuse the cached verdict only when the fingerprint is unchanged, within TTL, and no new negative reputation signal appeared. */
   @Remote
   async getAiAudit(pluginName: string): Promise<AiAuditResult> {
     this.track(pluginName, 'collecting', '正在定位插件并运行静态扫描…')
     try {
-      const report = runAudit(this.profileDir(), this.config.maxScanFiles)
+      const profileDir = this.profileDir()
+      const report = runAudit(profileDir, this.config.maxScanFiles)
       const plugin = report.plugins.find(candidate => candidate.name === pluginName)
       if (plugin === undefined) {
         throw new Error(`dsh-plugin-guard: 未找到第三方插件 "${pluginName}"（可能未安装或属于不受审计的 @deepseek-ai 核心）`)
       }
-      return await auditPluginWithAi(this.ctx, plugin, this.profileDir(), this.githubToken, (phase, detail) => {
+
+      const pluginDir = join(profileDir, 'node_modules', plugin.name)
+      const fingerprint = computePluginFingerprint(pluginDir, plugin.version)
+      const emit = (phase: AuditProgress['phase'], detail: string): void => {
         this.track(pluginName, phase, detail)
-      })
+      }
+
+      // Reputation is refreshed on every audit; only the model verdict is cached.
+      const freshReputation = await fetchPluginReputation(plugin, collectPluginMetadata(pluginDir), this.githubToken, emit)
+
+      const cache = this.loadAiCache()
+      const entry = cache.plugins[plugin.name]
+      const ageHours = entry === undefined || entry.fingerprint !== fingerprint
+        ? Number.NaN
+        : (Date.now() - new Date(entry.cachedAt).getTime()) / 3_600_000
+      const withinTtl = cache.ttlHours > 0 && Number.isFinite(ageHours) && ageHours >= 0 && ageHours < cache.ttlHours
+
+      if (entry !== undefined && withinTtl) {
+        if (hasNewNegativeSignal(entry.result.reputation, freshReputation)) {
+          emit('researching', '发现新的负面声誉信号，忽略缓存、强制重审…')
+        } else {
+          emit('done', '命中缓存，复用上次判定；声誉已拉取最新')
+          return { ...entry.result, reputation: freshReputation, cached: true }
+        }
+      }
+
+      const result = await auditPluginWithAi(this.ctx, plugin, profileDir, this.githubToken, emit, freshReputation)
+      cache.plugins[plugin.name] = { fingerprint, cachedAt: new Date().toISOString(), result }
+      this.saveAiCache(cache)
+      return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.track(pluginName, 'error', message)
