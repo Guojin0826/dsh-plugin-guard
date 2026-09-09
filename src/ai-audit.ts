@@ -11,7 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { join } from 'node:path'
-import { collectEvidence, collectPluginMetadata, type EvidenceSnippet, type PluginMetadata } from './scanner.ts'
+import { collectEvidence, collectPluginMetadata, findGithubUrls, type EvidenceSnippet, type PluginMetadata } from './scanner.ts'
 import {
   aiAssessmentSchema,
   type AdvisoryFinding,
@@ -589,21 +589,6 @@ function parseGithubRepo(repository: string): { owner: string; repo: string } | 
   return { owner, repo }
 }
 
-/** All github.com owner/repo URLs mentioned in arbitrary text (README, homepage, etc.). */
-function findGithubUrls(text: string): string[] {
-  if (text === '') return []
-  const urls: string[] = []
-  const pattern = /(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:|git\+ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/gi
-  let match: RegExpExecArray | null
-  while ((match = pattern.exec(text)) !== null) {
-    const owner = match[1] ?? ''
-    const repo = (match[2] ?? '').replace(/\.git$/i, '')
-    if (owner === '' || repo === '') continue
-    urls.push(`https://github.com/${owner}/${repo}`)
-  }
-  return urls
-}
-
 /**
  * Resolve which GitHub repo to investigate, preferring an address the plugin
  * states about ITSELF over a name-based lookup. Order: package.json
@@ -624,7 +609,7 @@ function resolvePluginRepo(
   const home = findGithubUrls(metadata.homepage)
   if (home.length > 0) return { url: home[0] ?? '', fromOwnContent: true }
   // 3. README / docs — prefer a repo whose name matches the plugin over any link.
-  const readme = findGithubUrls(metadata.readmeExcerpt)
+  const readme = metadata.readmeGithubUrls
   if (readme.length > 0) {
     const matching = readme.find(url => url.toLowerCase().endsWith(`/${unscoped}`))
     return { url: matching ?? readme[0] ?? '', fromOwnContent: true }

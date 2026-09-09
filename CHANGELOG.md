@@ -83,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (` thinking` / `<thinking>` / `<reasoning>` / `<scratchpad>`) are stripped
   before locating the JSON object, so the first pass parses directly instead of
   burning a strict-retry round.
+- GitHub repo detection no longer misses the repo when the plugin's own README
+  mentions its `github.com` link near the end: metadata collection now scans the
+  FULL README for repo URLs (the prompt still keeps only the capped 3 KB excerpt).
 
 ## [0.2.0] - 2026-09-05
 

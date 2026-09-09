@@ -428,6 +428,8 @@ export interface PluginMetadata {
   scripts: string
   /** First ~3KB of README — the plugin's own documentation of what it does. */
   readmeExcerpt: string
+  /** GitHub repo URLs found anywhere in the FULL README (drives repo resolution, not the prompt). */
+  readmeGithubUrls: string[]
   /** dsh.plugin.json description when present. */
   manifestDescription: string
 }
@@ -456,6 +458,21 @@ function repositoryOf(value: unknown): string {
   return ''
 }
 
+/** All github.com owner/repo URLs mentioned in arbitrary text (README, homepage, etc.). */
+export function findGithubUrls(text: string): string[] {
+  if (text === '') return []
+  const urls: string[] = []
+  const pattern = /(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:|git\+ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/gi
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text)) !== null) {
+    const owner = match[1] ?? ''
+    const repo = (match[2] ?? '').replace(/\.git$/i, '')
+    if (owner === '' || repo === '') continue
+    urls.push(`https://github.com/${owner}/${repo}`)
+  }
+  return urls
+}
+
 /**
  * Read a plugin's self-description without executing it: package.json
  * (description/keywords/author/repository/homepage/scripts), the README's
@@ -473,6 +490,7 @@ export function collectPluginMetadata(pluginDir: string): PluginMetadata {
     homepage: '',
     scripts: '',
     readmeExcerpt: '',
+    readmeGithubUrls: [],
     manifestDescription: '',
   }
 
@@ -502,7 +520,11 @@ export function collectPluginMetadata(pluginDir: string): PluginMetadata {
       if (!existsSync(path)) continue
       const st = statSync(path)
       if (!st.isFile() || st.size === 0) continue
-      metadata.readmeExcerpt = readFileSync(path).subarray(0, README_MAX_BYTES).toString('utf-8')
+      const buf = readFileSync(path)
+      metadata.readmeExcerpt = buf.subarray(0, README_MAX_BYTES).toString('utf-8')
+      // Repo links can sit at the very bottom of a README; scan the whole file
+      // while the prompt keeps only the capped excerpt.
+      metadata.readmeGithubUrls = findGithubUrls(buf.toString('utf-8'))
       if (metadata.readmeExcerpt !== '') break
     } catch {
       /* try the next filename */
