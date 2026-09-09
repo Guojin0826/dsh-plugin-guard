@@ -1,4 +1,18 @@
-import type { SecurityReport, Severity } from './contracts.ts';
+import type { PluginAudit, PluginDelta, SecurityReport, Severity } from './contracts.ts';
+/** A plugin dependency resolved to an installed name + version. */
+export interface InstalledDependency {
+    name: string;
+    version: string;
+}
+/**
+ * Read the plugin's RESOLVED direct runtime dependencies by walking its own
+ * `node_modules` (one level, plus scoped `@scope/pkg`). With pnpm these top-level
+ * entries are symlinks into the store, and reading their package.json follows the
+ * symlink to the real exact version. Cross-filtered against the declared
+ * `dependencies` / `optionalDependencies` / `peerDependencies` so a dev-checkout's
+ * toolchain (typescript, esbuild, …) does not masquerade as runtime dependencies.
+ */
+export declare function readInstalledDependencies(pluginDir: string): InstalledDependency[];
 /** One extracted source line that matched a danger rule, for AI-audit evidence. */
 export interface EvidenceSnippet {
     /** Plugin-relative file path. */
@@ -32,9 +46,13 @@ export interface PluginMetadata {
     scripts: string;
     /** First ~3KB of README — the plugin's own documentation of what it does. */
     readmeExcerpt: string;
+    /** GitHub repo URLs found anywhere in the FULL README (drives repo resolution, not the prompt). */
+    readmeGithubUrls: string[];
     /** dsh.plugin.json description when present. */
     manifestDescription: string;
 }
+/** All github.com owner/repo URLs mentioned in arbitrary text (README, homepage, etc.). */
+export declare function findGithubUrls(text: string): string[];
 /**
  * Read a plugin's self-description without executing it: package.json
  * (description/keywords/author/repository/homepage/scripts), the README's
@@ -46,3 +64,27 @@ export interface PluginMetadata {
 export declare function collectPluginMetadata(pluginDir: string): PluginMetadata;
 /** Run a full audit over one profile directory (contains package.json + node_modules). */
 export declare function runAudit(profileDir: string, maxScanFiles: number): SecurityReport;
+/** One plugin's persisted state from the previous scan, for version-diff alerting. */
+export interface BaselineEntry {
+    readonly version: string;
+    readonly flags: readonly string[];
+    readonly perms: readonly string[];
+}
+/** The persisted baseline snapshot: plugin name → its last-seen state. */
+export type BaselineSnapshot = Record<string, BaselineEntry>;
+/** Build the baseline snapshot to persist from a fresh audit. */
+export declare function buildBaseline(plugins: PluginAudit[]): BaselineSnapshot;
+/**
+ * Diff a fresh audit against the previous baseline: one delta per plugin that is
+ * newly installed, changed version, or gained flags/permissions. An empty
+ * baseline (first scan) yields no deltas — there is nothing to compare against.
+ */
+export declare function computePluginDeltas(plugins: PluginAudit[], baseline: BaselineSnapshot): PluginDelta[];
+/**
+ * Content fingerprint of everything the AI audit actually reads for one plugin:
+ * version, package.json, dsh.plugin.json, README, and every scanned source file.
+ * Equal fingerprints mean identical audit inputs, so a cached verdict stays valid.
+ * Hashing is content-based (not flag-based), so even a one-byte source change
+ * invalidates the fingerprint and forces a re-audit.
+ */
+export declare function computePluginFingerprint(pluginDir: string, version: string, modelKey?: string): string;

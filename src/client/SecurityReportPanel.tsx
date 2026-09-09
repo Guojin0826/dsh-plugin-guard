@@ -108,6 +108,9 @@ function GithubBox({ github, t }: { github: GithubEvidence; t: (key: string) => 
     return null
   }
   const dateOf = (iso: string): string => (iso === '' ? t('aiUnknown') : iso.slice(0, 10))
+  const pushedMs = github.pushedAt !== '' ? new Date(github.pushedAt).getTime() : Number.NaN
+  const daysSincePush = Number.isFinite(pushedMs) ? Math.floor((Date.now() - pushedMs) / 86_400_000) : -1
+  const stale = daysSincePush > 365
   return (
     <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${palette.border}` }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', alignItems: 'center' }}>
@@ -115,6 +118,7 @@ function GithubBox({ github, t }: { github: GithubEvidence; t: (key: string) => 
         {github.stars >= 0 && <span>⭐ {github.stars.toLocaleString()}</span>}
         {github.forks >= 0 && <span>⑂ {github.forks.toLocaleString()}</span>}
         {github.archived && <span style={{ color: palette.mute }}>({t('aiArchived')})</span>}
+        {stale && <span style={{ color: palette.red, fontWeight: 600 }}>{t('aiStale')}</span>}
       </div>
       {github.description !== '' && <div style={{ marginTop: 2, color: '#555' }}>{github.description}</div>}
       <div style={{ marginTop: 2, color: '#555' }}>
@@ -124,6 +128,11 @@ function GithubBox({ github, t }: { github: GithubEvidence; t: (key: string) => 
         {t('aiAccountRegistered')} {dateOf(github.ownerCreatedAt)}
         {github.ownerPublicRepos >= 0 && ` · ${t('aiPublicRepos')} ${github.ownerPublicRepos}`}
         {github.ownerFollowers >= 0 && ` · ${t('aiFollowers')} ${github.ownerFollowers}`}
+      </div>
+      <div style={{ marginTop: 2, color: '#555' }}>
+        {github.license !== '' && <span>{t('aiLicense')}: {github.license}</span>}
+        {github.openIssues >= 0 && <span> · {t('aiOpenIssues')} {github.openIssues.toLocaleString()}</span>}
+        <span style={{ color: palette.mute }}> · {t('aiSecurity')}: {github.hasSecurityPolicy ? '✓ SECURITY.md' : '✗'}</span>
       </div>
       {github.note !== '' && <div style={{ marginTop: 3, color: palette.mute, fontStyle: 'italic' }}>{github.note}</div>}
     </div>
@@ -154,6 +163,40 @@ function AdvisoriesBox({ reputation, t }: { reputation: ReputationEvidence; t: (
             </span>
             {advisory.aliases.length > 0 && <span style={{ color: palette.mute, fontSize: 12 }}> ({advisory.aliases.join(', ')})</span>}
             {advisory.summary !== '' && <div style={{ fontSize: 12, color: '#555', wordBreak: 'break-all' }}>{advisory.summary}</div>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Vulnerabilities found in the plugin's resolved direct dependencies (OSV.dev batch). */
+function DependencyAdvisoriesBox({ reputation, t }: { reputation: ReputationEvidence; t: (key: string) => string }): ReactElement | null {
+  const deps = reputation.dependencyAdvisories ?? []
+  if (deps.length === 0) return null
+  const impacted = deps.filter(dep => dep.advisories.length > 0)
+  const heading = <div style={{ fontWeight: 600 }}>{t('aiDeps')}</div>
+  if (impacted.length === 0) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        {heading}
+        <div style={{ color: palette.mute }}>{t('aiDepsClean')} ({deps.length})</div>
+      </div>
+    )
+  }
+  const hasMalicious = impacted.some(dep => dep.advisories.some(adv => adv.malicious))
+  return (
+    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: hasMalicious ? palette.redBg : palette.busyBg, border: `1px solid ${hasMalicious ? palette.red : palette.busyBorder}` }}>
+      {heading}
+      <ul style={{ margin: '4px 0 0', paddingLeft: 0, listStyle: 'none' }}>
+        {impacted.map((dep, index) => (
+          <li key={index} style={{ margin: '4px 0' }}>
+            <span style={{ fontWeight: 600, color: '#444' }}>{dep.name}@{dep.version}</span>
+            {dep.advisories.map((adv, j) => (
+              <div key={j} style={{ fontSize: 12, color: adv.malicious ? palette.red : '#555', wordBreak: 'break-all' }}>
+                {adv.malicious ? '⚠ ' : ''}{adv.id}{adv.summary !== '' ? ` — ${adv.summary}` : ''}
+              </div>
+            ))}
           </li>
         ))}
       </ul>
@@ -231,6 +274,7 @@ function ReputationBox({ reputation, t }: { reputation: ReputationEvidence; t: (
         )}
         <GithubBox github={reputation.github} t={t} />
         <AdvisoriesBox reputation={reputation} t={t} />
+        <DependencyAdvisoriesBox reputation={reputation} t={t} />
         <WebReportsBox reputation={reputation} t={t} />
         {reputation.note !== '' && (
           <div style={{ marginTop: 6, color: palette.mute, fontStyle: 'italic' }}>{reputation.note}</div>

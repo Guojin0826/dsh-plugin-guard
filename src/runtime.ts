@@ -256,7 +256,7 @@ export class GuardRuntime extends TypertRemoteService {
       }
 
       // Reputation is refreshed on every audit; only the model verdict is cached.
-      const freshReputation = await fetchPluginReputation(plugin, collectPluginMetadata(pluginDir), this.githubToken, emit)
+      const freshReputation = await fetchPluginReputation(plugin, collectPluginMetadata(pluginDir), pluginDir, this.githubToken, emit)
 
       const cache = this.loadAiCache()
       const entry = cache.plugins[plugin.name]

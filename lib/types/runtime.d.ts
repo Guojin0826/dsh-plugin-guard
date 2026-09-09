@@ -5,7 +5,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import type { AiAuditResult, AuditProgress, GithubTokenStatus, SecurityReport } from './contracts.ts';
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SecurityReport } from './contracts.ts';
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
     /** Profile name under `$DSH_HOME/profiles` to audit. */
@@ -31,10 +31,25 @@ export declare class GuardRuntime extends TypertRemoteService {
     private persistToken;
     /** Record an audit phase for one plugin, keeping the original start timestamp. */
     private track;
-    /** Run a fresh static audit over the profile's installed third-party plugins. */
+    /** File holding the previous scan's baseline, for version-diff alerting (best-effort, Host-local). */
+    private baselineFile;
+    private loadBaseline;
+    private saveBaseline;
+    /** File holding the persisted AI-audit result cache (best-effort, Host-local). */
+    private aiCacheFile;
+    private loadAiCache;
+    private saveAiCache;
+    /** Current AI-audit cache TTL in hours (0 disables the cache). */
+    getAuditConfig(): Promise<AuditCacheConfig>;
+    /** Set the AI-audit cache TTL in hours (0 disables the cache) and persist it. */
+    setAuditTtl(ttlHours: number): Promise<AuditCacheConfig>;
+    /** Run a fresh static audit, diff it against the previous scan's baseline, then persist the new baseline. */
     getReport(): Promise<SecurityReport>;
-    /** Ask the default model to assess one plugin against both the static scan and source evidence. */
+    /** Assess one plugin: always refresh live reputation, then reuse the cached verdict only when the fingerprint is unchanged, within TTL, and no new negative reputation signal appeared. */
     getAiAudit(pluginName: string): Promise<AiAuditResult>;
+    /** Bypass the verdict cache and always run a full model audit for one plugin (reputation still fetched fresh). */
+    forceAiAudit(pluginName: string): Promise<AiAuditResult>;
+    private runAiAudit;
     /** Poll the current AI audit progress for one plugin, or `null` when none has been recorded. */
     getAiAuditStatus(pluginName: string): Promise<AuditProgress | null>;
     /** Masked state of the GitHub token (never returns the token value itself). */

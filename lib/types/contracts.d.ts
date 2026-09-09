@@ -57,6 +57,18 @@ export interface PluginAudit {
     readonly capabilityMismatch: boolean;
     readonly errors: string[];
 }
+/** What changed for one plugin since the previous scan's baseline (version-diff alerting). */
+export interface PluginDelta {
+    readonly name: string;
+    /** True when the plugin was absent from the previous baseline (newly installed). */
+    readonly isNew: boolean;
+    readonly previousVersion: string;
+    readonly currentVersion: string;
+    /** Rule codes present now but not in the baseline. */
+    readonly addedFlags: string[];
+    /** Declared host services added since the baseline. */
+    readonly addedPerms: string[];
+}
 /** The full audit report returned by `guard.getReport`. */
 export interface SecurityReport {
     readonly generatedAt: string;
@@ -67,6 +79,8 @@ export interface SecurityReport {
     readonly yellowCount: number;
     readonly greenCount: number;
     readonly plugins: PluginAudit[];
+    /** Per-plugin changes since the previous scan (empty on the first scan). */
+    readonly deltas: PluginDelta[];
 }
 export declare const severitySchema: z.ZodEnum<{
     high: "high";
@@ -144,6 +158,14 @@ export declare const pluginAuditSchema: z.ZodReadonly<z.ZodObject<{
     capabilityMismatch: z.ZodBoolean;
     errors: z.ZodArray<z.ZodString>;
 }, z.core.$strip>>;
+export declare const pluginDeltaSchema: z.ZodReadonly<z.ZodObject<{
+    name: z.ZodString;
+    isNew: z.ZodBoolean;
+    previousVersion: z.ZodString;
+    currentVersion: z.ZodString;
+    addedFlags: z.ZodArray<z.ZodString>;
+    addedPerms: z.ZodArray<z.ZodString>;
+}, z.core.$strip>>;
 export declare const securityReportSchema: z.ZodReadonly<z.ZodObject<{
     generatedAt: z.ZodString;
     dshHome: z.ZodString;
@@ -193,6 +215,14 @@ export declare const securityReportSchema: z.ZodReadonly<z.ZodObject<{
         capabilityMismatch: z.ZodBoolean;
         errors: z.ZodArray<z.ZodString>;
     }, z.core.$strip>>>;
+    deltas: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        name: z.ZodString;
+        isNew: z.ZodBoolean;
+        previousVersion: z.ZodString;
+        currentVersion: z.ZodString;
+        addedFlags: z.ZodArray<z.ZodString>;
+        addedPerms: z.ZodArray<z.ZodString>;
+    }, z.core.$strip>>>;
 }, z.core.$strip>>;
 /** The model's security verdict for one plugin. */
 export type AiVerdict = 'safe' | 'suspicious' | 'malicious' | 'inconclusive';
@@ -227,6 +257,12 @@ export interface GithubEvidence {
     ownerPublicRepos: number;
     /** Owner's followers; -1 unknown. */
     ownerFollowers: number;
+    /** Open issue count; -1 unknown. */
+    openIssues: number;
+    /** SPDX license id (e.g. `MIT`); empty when the repo declares none. */
+    license: string;
+    /** Whether the repo ships a SECURITY.md (maintenance security hygiene). */
+    hasSecurityPolicy: boolean;
     /** Human-readable lookup failures (rate limit etc.). */
     note: string;
 }
@@ -250,6 +286,12 @@ export interface AdvisoryFinding {
     /** Advisory source label, e.g. `OSV.dev`. */
     readonly source: string;
 }
+/** One resolved direct dependency and the advisories found for it (empty = clean). */
+export interface DependencyFinding {
+    readonly name: string;
+    readonly version: string;
+    readonly advisories: AdvisoryFinding[];
+}
 /** Internet-reputation evidence gathered for the model, returned verbatim with the verdict. */
 export interface ReputationEvidence {
     npmDescription: string;
@@ -259,6 +301,8 @@ export interface ReputationEvidence {
     npmMaintainers: string[];
     npmCreated: string;
     npmModified: string;
+    /** npm deprecation message for the latest version; empty when not deprecated. */
+    npmDeprecated: string;
     /** Weekly npm downloads; -1 when unknown. */
     weeklyDownloads: number;
     /** Structured web-search hits from the malicious/attack-report lookup (title/url/snippet). */
@@ -267,6 +311,8 @@ export interface ReputationEvidence {
     advisories: AdvisoryFinding[];
     /** GitHub repo + owner evidence. */
     github: GithubEvidence;
+    /** Known vulnerabilities in the plugin's resolved direct dependencies (OSV.dev batch). */
+    dependencyAdvisories: DependencyFinding[];
     /** Human-readable lookup failures, e.g. "npm 未收录该包名". */
     note: string;
 }
@@ -276,6 +322,8 @@ export interface AiAuditResult extends AiAssessment {
     readonly provider: string;
     readonly model: string;
     readonly generatedAt: string;
+    /** True when served from the content-fingerprint cache rather than a fresh model call. */
+    readonly cached: boolean;
     readonly reputation: ReputationEvidence;
 }
 export declare const aiVerdictSchema: z.ZodEnum<{
@@ -313,6 +361,9 @@ export declare const githubEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     ownerCreatedAt: z.ZodString;
     ownerPublicRepos: z.ZodNumber;
     ownerFollowers: z.ZodNumber;
+    openIssues: z.ZodNumber;
+    license: z.ZodString;
+    hasSecurityPolicy: z.ZodBoolean;
     note: z.ZodString;
 }, z.core.$strip>>;
 export declare const webSearchHitSchema: z.ZodReadonly<z.ZodObject<{
@@ -327,6 +378,17 @@ export declare const advisoryFindingSchema: z.ZodReadonly<z.ZodObject<{
     aliases: z.ZodArray<z.ZodString>;
     source: z.ZodString;
 }, z.core.$strip>>;
+export declare const dependencyFindingSchema: z.ZodReadonly<z.ZodObject<{
+    name: z.ZodString;
+    version: z.ZodString;
+    advisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        id: z.ZodString;
+        summary: z.ZodString;
+        malicious: z.ZodBoolean;
+        aliases: z.ZodArray<z.ZodString>;
+        source: z.ZodString;
+    }, z.core.$strip>>>;
+}, z.core.$strip>>;
 export declare const reputationEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     npmDescription: z.ZodString;
     npmLatest: z.ZodString;
@@ -335,6 +397,7 @@ export declare const reputationEvidenceSchema: z.ZodReadonly<z.ZodObject<{
     npmMaintainers: z.ZodArray<z.ZodString>;
     npmCreated: z.ZodString;
     npmModified: z.ZodString;
+    npmDeprecated: z.ZodString;
     weeklyDownloads: z.ZodNumber;
     webSearchHits: z.ZodArray<z.ZodReadonly<z.ZodObject<{
         title: z.ZodString;
@@ -360,8 +423,22 @@ export declare const reputationEvidenceSchema: z.ZodReadonly<z.ZodObject<{
         ownerCreatedAt: z.ZodString;
         ownerPublicRepos: z.ZodNumber;
         ownerFollowers: z.ZodNumber;
+        openIssues: z.ZodNumber;
+        license: z.ZodString;
+        hasSecurityPolicy: z.ZodBoolean;
         note: z.ZodString;
     }, z.core.$strip>>;
+    dependencyAdvisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        name: z.ZodString;
+        version: z.ZodString;
+        advisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+            id: z.ZodString;
+            summary: z.ZodString;
+            malicious: z.ZodBoolean;
+            aliases: z.ZodArray<z.ZodString>;
+            source: z.ZodString;
+        }, z.core.$strip>>>;
+    }, z.core.$strip>>>;
     note: z.ZodString;
 }, z.core.$strip>>;
 export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
@@ -383,6 +460,7 @@ export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
     concerns: z.ZodArray<z.ZodString>;
     recommendations: z.ZodArray<z.ZodString>;
     generatedAt: z.ZodString;
+    cached: z.ZodBoolean;
     reputation: z.ZodReadonly<z.ZodObject<{
         npmDescription: z.ZodString;
         npmLatest: z.ZodString;
@@ -391,6 +469,7 @@ export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
         npmMaintainers: z.ZodArray<z.ZodString>;
         npmCreated: z.ZodString;
         npmModified: z.ZodString;
+        npmDeprecated: z.ZodString;
         weeklyDownloads: z.ZodNumber;
         webSearchHits: z.ZodArray<z.ZodReadonly<z.ZodObject<{
             title: z.ZodString;
@@ -416,8 +495,22 @@ export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
             ownerCreatedAt: z.ZodString;
             ownerPublicRepos: z.ZodNumber;
             ownerFollowers: z.ZodNumber;
+            openIssues: z.ZodNumber;
+            license: z.ZodString;
+            hasSecurityPolicy: z.ZodBoolean;
             note: z.ZodString;
         }, z.core.$strip>>;
+        dependencyAdvisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+            name: z.ZodString;
+            version: z.ZodString;
+            advisories: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+                id: z.ZodString;
+                summary: z.ZodString;
+                malicious: z.ZodBoolean;
+                aliases: z.ZodArray<z.ZodString>;
+                source: z.ZodString;
+            }, z.core.$strip>>>;
+        }, z.core.$strip>>>;
         note: z.ZodString;
     }, z.core.$strip>>;
 }, z.core.$strip>>;
@@ -475,6 +568,14 @@ export interface GithubTokenStatus {
 }
 export declare const githubTokenStatusSchema: z.ZodReadonly<z.ZodObject<{
     configured: z.ZodBoolean;
+}, z.core.$strip>>;
+/** Cache settings for the AI-audit result cache (content fingerprint + version + TTL). */
+export interface AuditCacheConfig {
+    /** Hours a cached verdict stays fresh before a forced re-audit; 0 disables the cache. */
+    readonly ttlHours: number;
+}
+export declare const auditCacheConfigSchema: z.ZodReadonly<z.ZodObject<{
+    ttlHours: z.ZodNumber;
 }, z.core.$strip>>;
 /** The plugin-guard Remote namespace's strict invocation descriptors. */
 export declare const GUARD_INVOCATIONS: readonly InvocationDescriptor[];

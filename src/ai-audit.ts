@@ -11,13 +11,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { join } from 'node:path'
-import { collectEvidence, collectPluginMetadata, findGithubUrls, type EvidenceSnippet, type PluginMetadata } from './scanner.ts'
+import { collectEvidence, collectPluginMetadata, findGithubUrls, readInstalledDependencies, type EvidenceSnippet, type PluginMetadata } from './scanner.ts'
 import {
   aiAssessmentSchema,
   type AdvisoryFinding,
   type AiAssessment,
   type AiAuditResult,
   type AuditPhase,
+  type DependencyFinding,
   type GithubEvidence,
   type PluginAudit,
   type ReputationEvidence,
@@ -94,6 +95,8 @@ const SYSTEM_PROMPT = [
   '',
   '核心判断原则——必须结合插件自称的功能，不要孤立地看待危险能力：',
   '- 危险能力（子进程、文件读写、网络访问、环境变量、eval 等）本身不是恶意的证据；先判断这些能力是否与插件自称的功能一致。',
+  '- 判断危险能力时区分『签名文本』与『真实调用点』：安全审计、扫描、杀毒类插件，其源码里必然出现它用来检测别人的签名（正则里的 `curl | sh`、`eval`、`new Function`、`child_process` 等字样，以及 RegExp 的 `.exec(` 方法调用）——这些只是检测规则 / 字符串，不是插件自己在执行动作。只有真实的 `eval(...)`、`new Function(...)`、`child_process.exec/spawn(...)`、shell 管道等真实调用点，才算插件具备该危险能力；不要因为扫描结果或代码片段里出现这些关键词字样就认定插件自己执行了它们。',
+  '- 反向警惕：插件主动自称安全、审计、防护、杀毒工具，是更高审查等级的信号（攻击者常伪装成防护工具以降低戒心），绝不是免责理由——这类插件尤其要核对其签名检测之外是否真的存在执行、外联、凭据访问等真实行为。',
   '- 例如：自称"文件管理器 / 终端工具 / 代码执行器 / 爬虫"的插件读写文件、执行命令、发网络请求是它的合理本职，不应仅因此判为恶意。',
   '- 只有当能力明显超出自称功能，且指向数据外传、凭据窃取、后门、挖矿、勒索、隐蔽联网回传等恶意目的时，才判 "malicious"。',
   '- 若能力与功能基本一致、仅实现上值得警惕（如命令拼接、硬编码外联地址），给出 "suspicious" 及具体复核建议。',
@@ -634,7 +637,22 @@ const EMPTY_GITHUB: GithubEvidence = {
   ownerCreatedAt: '',
   ownerPublicRepos: -1,
   ownerFollowers: -1,
+  openIssues: -1,
+  license: '',
+  hasSecurityPolicy: false,
   note: '',
+}
+
+/** Cheap HEAD-style GET probe for `SECURITY.md` at the repo head; false on 404 / network error. */
+async function checkSecurityPolicy(owner: string, repo: string): Promise<boolean> {
+  try {
+    const response = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/SECURITY.md`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
 }
 
 /** Fetch repo + owner info from the GitHub REST API; never throws, degrades to note. */
@@ -652,9 +670,10 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string, from
     notes.push('⚠ 插件自身未声明 GitHub 地址，此仓库是按包名从 npm 推断的，可能为同名仓库，请人工核对')
   }
   const authHeaders = githubToken !== '' ? { authorization: `Bearer ${githubToken}` } : undefined
-  const [repoResult, ownerResult] = await Promise.allSettled([
+  const [repoResult, ownerResult, securityResult] = await Promise.allSettled([
     fetchJson(`https://api.github.com/repos/${owner}/${repo}`, FETCH_TIMEOUT_MS, authHeaders),
     fetchJson(`https://api.github.com/users/${owner}`, FETCH_TIMEOUT_MS, authHeaders),
+    checkSecurityPolicy(owner, repo),
   ])
   if (repoResult.status === 'fulfilled') {
     const info = repoResult.value as Record<string, unknown>
@@ -669,6 +688,11 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string, from
       github.archived = info.archived === true
       github.createdAt = typeof info.created_at === 'string' ? info.created_at : ''
       github.pushedAt = typeof info.pushed_at === 'string' ? info.pushed_at : ''
+      github.openIssues = typeof info.open_issues_count === 'number' ? info.open_issues_count : -1
+      const license = info.license as { spdx_id?: unknown; name?: unknown } | null | undefined
+      if (license !== null && license !== undefined) {
+        github.license = typeof license.spdx_id === 'string' ? license.spdx_id : typeof license.name === 'string' ? license.name : ''
+      }
     }
   } else {
     notes.push(`GitHub 仓库查询失败 (${reasonOf(repoResult.reason)})`)
@@ -685,6 +709,7 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string, from
   } else {
     notes.push(`GitHub 用户查询失败 (${reasonOf(ownerResult.reason)})`)
   }
+  if (securityResult.status === 'fulfilled' && securityResult.value === true) github.hasSecurityPolicy = true
   github.note = notes.join('；')
   return github
 }
@@ -694,6 +719,17 @@ async function lookupGithubRepo(repositoryUrl: string, githubToken: string, from
  * package. This is the authoritative, keyless "has it been reported as
  * malicious?" signal. Never throws — degrades to an empty list.
  */
+/** Map an OSV `vulns` array to findings; shared by the single and batch endpoints. */
+function mapOsvVulns(vulns: Array<Record<string, unknown>>): AdvisoryFinding[] {
+  return vulns.slice(0, 6).map((entry): AdvisoryFinding => {
+    const id = typeof entry.id === 'string' ? entry.id : ''
+    const summary = typeof entry.summary === 'string' ? entry.summary : ''
+    const aliases = (Array.isArray(entry.aliases) ? entry.aliases : []).map(value => String(value)).filter(value => value !== '')
+    const malicious = id.startsWith('MAL-') || /malicious/i.test(summary)
+    return { id, summary, malicious, aliases, source: 'OSV.dev' }
+  }).filter(entry => entry.id !== '' || entry.summary !== '')
+}
+
 async function lookupOsvAdvisories(pluginName: string): Promise<AdvisoryFinding[]> {
   try {
     const response = await fetch('https://api.osv.dev/v1/query', {
@@ -709,16 +745,42 @@ async function lookupOsvAdvisories(pluginName: string): Promise<AdvisoryFinding[
     if (!response.ok) return []
     const data = await response.json() as { vulns?: unknown }
     const vulns = Array.isArray(data.vulns) ? data.vulns : []
-    return (vulns as Array<Record<string, unknown>>).slice(0, 6).map((entry): AdvisoryFinding => {
-      const id = typeof entry.id === 'string' ? entry.id : ''
-      const summary = typeof entry.summary === 'string' ? entry.summary : ''
-      const aliases = (Array.isArray(entry.aliases) ? entry.aliases : []).map(value => String(value)).filter(value => value !== '')
-      const malicious = id.startsWith('MAL-') || /malicious/i.test(summary)
-      return { id, summary, malicious, aliases, source: 'OSV.dev' }
-    }).filter(entry => entry.id !== '' || entry.summary !== '')
+    return mapOsvVulns(vulns as Array<Record<string, unknown>>)
   } catch {
     return []
   }
+}
+
+/** Batch-query OSV.dev for many resolved dependencies in a single request. */
+async function lookupOsvAdvisoriesBatch(deps: Array<{ name: string; version: string }>): Promise<DependencyFinding[]> {
+  if (deps.length === 0) return []
+  try {
+    const response = await fetch('https://api.osv.dev/v1/querybatch', {
+      method: 'POST',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'user-agent': 'dsh-plugin-guard/0.1.0 (security audit)',
+      },
+      body: JSON.stringify({ queries: deps.map(dep => ({ package: { name: dep.name, ecosystem: 'npm' }, version: dep.version })) }),
+    })
+    if (!response.ok) return []
+    const data = await response.json() as { results?: unknown }
+    const results = Array.isArray(data.results) ? data.results : []
+    return deps.map((dep, index): DependencyFinding => {
+      const entry = results[index] as { vulns?: unknown } | undefined
+      const vulns = entry !== undefined && Array.isArray(entry.vulns) ? entry.vulns as Array<Record<string, unknown>> : []
+      return { name: dep.name, version: dep.version, advisories: mapOsvVulns(vulns) }
+    })
+  } catch {
+    return deps.map(dep => ({ name: dep.name, version: dep.version, advisories: [] }))
+  }
+}
+
+/** Enumerate a plugin's resolved direct dependencies and batch-check them against OSV.dev. */
+async function lookupDependencyAdvisories(pluginDir: string): Promise<DependencyFinding[]> {
+  return lookupOsvAdvisoriesBatch(readInstalledDependencies(pluginDir))
 }
 
 /** npm registry + download stats + OSV advisories + a web search, run in parallel with graceful degradation. */
@@ -736,6 +798,7 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
     webSearchHits: [],
     advisories: [],
     github: EMPTY_GITHUB,
+    dependencyAdvisories: [],
     note: '',
   }
   const notes: string[] = []
@@ -803,6 +866,9 @@ async function lookupPluginReputation(pluginName: string): Promise<ReputationEvi
 function negativeFootprint(reputation: ReputationEvidence): string[] {
   const keys: string[] = []
   for (const advisory of reputation.advisories) keys.push('adv:' + advisory.id)
+  for (const dep of reputation.dependencyAdvisories ?? []) {
+    for (const advisory of dep.advisories) keys.push(`dep-adv:${dep.name}:${advisory.id}`)
+  }
   for (const hit of reputation.webSearchHits) keys.push('web:' + hit.url)
   if (reputation.npmDeprecated !== '') keys.push('deprecated:' + reputation.npmDeprecated)
   return keys
@@ -827,14 +893,19 @@ export function hasNewNegativeSignal(cached: ReputationEvidence, fresh: Reputati
 export async function fetchPluginReputation(
   plugin: PluginAudit,
   metadata: PluginMetadata,
+  pluginDir: string,
   githubToken: string,
   emit: (phase: AuditPhase, detail: string) => void,
 ): Promise<ReputationEvidence> {
   emit('researching', '联网查询 npm 声誉与搜索结果…')
-  const reputation = await lookupPluginReputation(plugin.name)
+  const [reputation, dependencyAdvisories] = await Promise.all([
+    lookupPluginReputation(plugin.name),
+    lookupDependencyAdvisories(pluginDir),
+  ])
   emit('researching', '查询 GitHub 仓库与作者账号信息…')
   const resolvedRepo = resolvePluginRepo(metadata, reputation.npmRepository, plugin.name)
   reputation.github = await lookupGithubRepo(resolvedRepo.url, githubToken, resolvedRepo.fromOwnContent)
+  reputation.dependencyAdvisories = dependencyAdvisories
   return reputation
 }
 
@@ -874,7 +945,7 @@ export async function auditPluginWithAi(
   const metadata = collectPluginMetadata(pluginDir)
   if (metadata.description !== '') emit('collecting', `插件自述功能：${metadata.description.slice(0, 80)}`)
 
-  const reputation = prefetchedReputation ?? await fetchPluginReputation(plugin, metadata, githubToken, emit)
+  const reputation = prefetchedReputation ?? await fetchPluginReputation(plugin, metadata, pluginDir, githubToken, emit)
   const github = reputation.github
   const githubSummary = github.fullName !== ''
     ? `GitHub: ${github.fullName} ⭐${github.stars >= 0 ? String(github.stars) : '?'}`

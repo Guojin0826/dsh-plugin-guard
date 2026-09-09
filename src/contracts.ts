@@ -185,6 +185,12 @@ export interface GithubEvidence {
   ownerPublicRepos: number
   /** Owner's followers; -1 unknown. */
   ownerFollowers: number
+  /** Open issue count; -1 unknown. */
+  openIssues: number
+  /** SPDX license id (e.g. `MIT`); empty when the repo declares none. */
+  license: string
+  /** Whether the repo ships a SECURITY.md (maintenance security hygiene). */
+  hasSecurityPolicy: boolean
   /** Human-readable lookup failures (rate limit etc.). */
   note: string
 }
@@ -211,6 +217,13 @@ export interface AdvisoryFinding {
   readonly source: string
 }
 
+/** One resolved direct dependency and the advisories found for it (empty = clean). */
+export interface DependencyFinding {
+  readonly name: string
+  readonly version: string
+  readonly advisories: AdvisoryFinding[]
+}
+
 /** Internet-reputation evidence gathered for the model, returned verbatim with the verdict. */
 export interface ReputationEvidence {
   npmDescription: string
@@ -230,6 +243,8 @@ export interface ReputationEvidence {
   advisories: AdvisoryFinding[]
   /** GitHub repo + owner evidence. */
   github: GithubEvidence
+  /** Known vulnerabilities in the plugin's resolved direct dependencies (OSV.dev batch). */
+  dependencyAdvisories: DependencyFinding[]
   /** Human-readable lookup failures, e.g. "npm 未收录该包名". */
   note: string
 }
@@ -268,6 +283,9 @@ export const githubEvidenceSchema = z.object({
   ownerCreatedAt: z.string(),
   ownerPublicRepos: z.number(),
   ownerFollowers: z.number(),
+  openIssues: z.number(),
+  license: z.string(),
+  hasSecurityPolicy: z.boolean(),
   note: z.string(),
 }).readonly()
 
@@ -285,6 +303,12 @@ export const advisoryFindingSchema = z.object({
   source: z.string(),
 }).readonly()
 
+export const dependencyFindingSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  advisories: z.array(advisoryFindingSchema),
+}).readonly()
+
 export const reputationEvidenceSchema = z.object({
   npmDescription: z.string(),
   npmLatest: z.string(),
@@ -298,6 +322,7 @@ export const reputationEvidenceSchema = z.object({
   webSearchHits: z.array(webSearchHitSchema),
   advisories: z.array(advisoryFindingSchema),
   github: githubEvidenceSchema,
+  dependencyAdvisories: z.array(dependencyFindingSchema),
   note: z.string(),
 }).readonly()
 

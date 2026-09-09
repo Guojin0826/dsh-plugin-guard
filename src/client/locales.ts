@@ -89,6 +89,12 @@ export const zh: Record<string, string> = {
   ttlDisabled: '缓存已关闭',
   cacheHit: '来自缓存',
   aiForceAudit: '强制重审',
+  aiStale: '⚠ 超 1 年未提交，可能已弃坑',
+  aiOpenIssues: '开放 issue',
+  aiLicense: '许可',
+  aiSecurity: '安全策略',
+  aiDeps: '依赖漏洞检查 (OSV.dev)',
+  aiDepsClean: '直接依赖未发现已知漏洞',
 }
 
 export const en: Record<string, string> = {
@@ -157,6 +163,12 @@ export const en: Record<string, string> = {
   ttlDisabled: 'cache disabled',
   cacheHit: 'from cache',
   aiForceAudit: 'Force re-audit',
+  aiStale: 'no commits for over a year (possibly abandoned)',
+  aiOpenIssues: 'open issues',
+  aiLicense: 'License',
+  aiSecurity: 'Security policy',
+  aiDeps: 'Dependency vulns (OSV.dev)',
+  aiDepsClean: 'no known vulns in direct dependencies',
   aiMaintainers: 'Maintainers',
   aiWebReports: 'Web malicious/attack reports',
   aiWebNoReports: 'No malicious/attack reports found for this plugin',

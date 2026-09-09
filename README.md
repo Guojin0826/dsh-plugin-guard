@@ -24,7 +24,8 @@
   - **npm registry 元数据**：描述、维护者、发布 / 更新时间、周下载量、**包龄**（新包 < 30 天会标红——恶意包常"发布→得手→数日内被下架"）与 **deprecated 弃用标记**（来自维护者的权威"不可信"信号）；
   - **OSV.dev 权威记录**：查询该包是否被官方漏洞 / 恶意包数据库收录，`MAL-*` 或 “Malicious” 条目会高亮为「恶意」，是判定恶意的强信号；
   - **互联网恶意/攻击报告检索**：以 Bing 为主、DuckDuckGo 兜底，中英双语检索「该插件是否被举报为恶意 / 后门 / 供应链攻击」。命中经过**相关性过滤**——只有确实提到该插件名、且涉及恶意/攻击的条目才会展示；若没有相关报告，直接显示「未检索到与该插件相关的恶意/攻击报告」，**不会**列出无关内容或链接；
-  - **GitHub 仓库信号**：star / fork / 是否归档 / 作者账号年龄 / 公开仓库数。仓库地址**优先取自插件自述**（package.json 的 `repository` / `homepage`、README 文档）；只有插件完全没声明时，才按包名从 npm 推断，并明确标注「可能是同名仓库，请人工核对」。
+  - **GitHub 仓库信号**：star / fork / 是否归档 / 作者账号年龄 / 公开仓库数 / **开源许可（SPDX）** / **开放 issue 数** / **有无 SECURITY.md**，并据 `pushed_at` 判断**是否已弃坑（超 1 年无提交标红）**。仓库地址**优先取自插件自述**（package.json 的 `repository` / `homepage`、README 文档）；只有插件完全没声明时，才按包名从 npm 推断，并明确标注「可能是同名仓库，请人工核对」。
+  - **依赖漏洞扫描（OSV.dev 批量）**：每次审计会解析插件**直接运行依赖**（从自身 `node_modules` 读到精确安装版本，pnpm 符号链接照追、并与声明的 `dependencies` / `optionalDependencies` / `peerDependencies` 交叉过滤），单次批量查询 OSV.dev `/v1/querybatch` 是否有已知 CVE / 恶意记录；命中依赖会在声誉面板列出，且**新出现的依赖漏洞信号同样会使缓存判定失效**。全程无 key、尽力而为、不阻断审计。
 - **GitHub Token**：可在面板中填写 Personal Access Token，把 GitHub API 限额从 60 次/小时提升到 5000 次/小时。
 
 ## 安装与启用
@@ -111,6 +112,7 @@ dsh plugin --profile <name> add @guojin-ai/dsh-plugin-guard
 
 - **非 npm registry 来源**：`git+ / git: / github: / http(s) / file: / link: / 相对路径` 的依赖会被标出；
 - **可疑包名**：命中 `miner / stealer / keylogger / ransomware / trojan / backdoor / infostealer / credential-steal / exfil` 等关键词的依赖会被标记。
+- **已知漏洞依赖（OSV.dev）**：AI 审计会解析直接依赖的精确版本并批量查询 OSV.dev，命中的依赖在声誉面板中列出（详见上文「声誉佐证」）。
 
 ### 声明权限评分
 

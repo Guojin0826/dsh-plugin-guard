@@ -22,7 +22,8 @@
   - **npm registry metadata**: description, maintainers, publish/update dates, weekly downloads, **package age** (new packages < 30 days are flagged red — malware is often published → exploited → removed within days) and the **deprecated** notice (an authoritative "do not trust" signal from the maintainer);
   - **OSV.dev authoritative records**: whether the package is listed in the official vulnerability / malicious-package database — `MAL-*` or "Malicious" entries are highlighted as malicious and are a strong signal;
   - **Internet malicious/attack report search**: Bing-primary with a DuckDuckGo fallback, Chinese + English queries for "is this plugin reported as malicious / a backdoor / a supply-chain attack". Hits are **relevance-filtered** — only results that actually mention the plugin name AND a malicious/attack term are shown; when there is no relevant report it simply states "no malicious/attack reports found for this plugin" and never lists unrelated content or links;
-  - **GitHub repo signals**: stars, forks, archived status, author account age, public repo count. The repo URL is taken **first from the plugin's own declaration** (package.json `repository` / `homepage`, README/docs); only when the plugin states none is it inferred from npm by package name, clearly flagged as "possibly a same-named repo — verify manually".
+  - **GitHub repo signals**: stars, forks, archived status, author account age, public repo count, **open-source license (SPDX)**, **open issue count**, **presence of a SECURITY.md**, and an **abandoned** flag (red) when the last commit (`pushed_at`) is over a year old. The repo URL is taken **first from the plugin's own declaration** (package.json `repository` / `homepage`, README/docs); only when the plugin states none is it inferred from npm by package name, clearly flagged as "possibly a same-named repo — verify manually".
+  - **Dependency vulnerability scan (OSV.dev batch)**: each audit resolves the plugin's **direct runtime dependencies** (exact installed versions from its own `node_modules`, symlinks followed, cross-filtered against declared `dependencies` / `optionalDependencies` / `peerDependencies`) and batch-queries OSV.dev's `/v1/querybatch` for known CVEs / malicious records; impacted dependencies are listed in the reputation panel, and a **newly appearing dependency advisory also invalidates the cached verdict**. Keyless, best-effort, never blocking.
 - **GitHub Token**: optionally enter a Personal Access Token in the panel to raise the GitHub API limit from 60 to 5000 requests/hour.
 
 ## Install & enable
@@ -109,6 +110,7 @@ The top of the panel provides a password-style Token field (never echoed back):
 
 - **Non-registry sources**: dependencies using `git+ / git: / github: / http(s) / file: / link: / relative paths` are flagged.
 - **Suspicious names**: dependencies whose names hit keywords such as `miner / stealer / keylogger / ransomware / trojan / backdoor / infostealer / credential-steal / exfil` are marked.
+- **Known-vulnerable dependencies (OSV.dev)**: the AI audit resolves exact direct-dependency versions and batch-queries OSV.dev; hits are listed in the reputation panel (see "Reputation evidence" above).
 
 ### Declared-permission scoring
 

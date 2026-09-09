@@ -63,6 +63,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assignments.
 - **Download-and-execute rule**: flags the `curl | sh` / `wget | bash` / `| iex` chain
   in source and inside install scripts.
+- **Dependency vulnerability scan (OSV.dev batch)**: every AI audit now resolves the
+  plugin's *direct runtime dependencies* (exact installed versions from its own
+  `node_modules` — pnpm symlinks followed, cross-filtered against the declared
+  `dependencies` / `optionalDependencies` / `peerDependencies`) and batch-queries
+  OSV.dev's `/v1/querybatch` for known CVEs / malicious reports. Impacted dependencies
+  surface in the reputation panel, and a newly reported dependency advisory counts as a
+  negative signal that invalidates the cached verdict. Keyless and never blocking.
+- **GitHub health deepening**: the repo evidence now also reads the SPDX **license** and
+  **open issue count** (already in the repo API response) and probes for a **SECURITY.md**
+  on the default branch; the panel additionally flags a repo as **abandoned** (red) when
+  its last commit (`pushed_at`) is over a year old. One cheap raw fetch for `SECURITY.md`,
+  no extra API quota beyond it.
 
 ### Changed
 
@@ -86,6 +98,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub repo detection no longer misses the repo when the plugin's own README
   mentions its `github.com` link near the end: metadata collection now scans the
   FULL README for repo URLs (the prompt still keeps only the capped 3 KB excerpt).
+- `child-process` rule no longer flags `RegExp.prototype.exec` (`.exec(`) and other
+  `.exec(` / `.spawn(` / `.fork(` **method** calls as subprocess execution: the call-name
+  alternatives now require a preceding non-word/non-dot character, so a security
+  auditor's own regex loops stop self-triggering `child-process` and the downstream
+  `env-exfil` flag.
+- AI prompt hardening: the model is now told to distinguish **detector-signature text**
+  from **real call sites** (a scanner plugin legitimately contains `curl | sh` / `eval` /
+  `child_process` tokens inside its detection rules), and to treat a plugin's claim of
+  being a "security / audit" tool as a *higher*-scrutiny signal rather than an exemption —
+  reducing self-audit false positives without opening a masquerade loophole.
 
 ## [0.2.0] - 2026-09-05
 

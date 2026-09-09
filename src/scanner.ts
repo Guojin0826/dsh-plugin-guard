@@ -40,7 +40,7 @@ const HARDCODED_SECRET_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\bAKIA[0-9A-Z]{1
 
 /** Static danger rules, weighted by severity. */
 const DANGER_RULES: DangerRule[] = [
-  { code: 'child-process', severity: 'high', label: '子进程执行 (child_process)', re: /\b(?:execSync|execFileSync|spawnSync|fork|exec|spawn|execFile)\s*\(|\brequire\s*\(\s*['"]child_process['"]\s*\)|from\s+['"]child_process['"]|import\s*\(\s*['"]child_process['"]\s*\)/g },
+  { code: 'child-process', severity: 'high', label: '子进程执行 (child_process)', re: /(?<![\w.])(?:execSync|execFileSync|spawnSync|fork|exec|spawn|execFile)\s*\(|\brequire\s*\(\s*['"]child_process['"]\s*\)|from\s+['"]child_process['"]|import\s*\(\s*['"]child_process['"]\s*\)/g },
   { code: 'eval', severity: 'high', label: '动态代码执行 (eval / new Function)', re: /\beval\s*\(|\bnew\s+Function\s*\(/g },
   { code: 'vm-module', severity: 'high', label: 'VM 模块 (沙箱逃逸面)', re: /\brequire\s*\(\s*['"]vm['"]\s*\)|from\s+['"]vm['"]|import\s*\(\s*['"]vm['"]\s*\)/g },
   { code: 'shell', severity: 'high', label: 'Shell 命令执行面', re: /shell\s*:\s*true|['"`]\s*(?:rm\s+-rf|curl\s|wget\s|nc\s|sh\s+-c|bash\s+-c|cmd\s*\/[ck]|powershell\s|nslookup\s|whoami\b|ipconfig\b|netstat\b|chmod\s+)/g },
@@ -235,6 +235,73 @@ function checkInstallScripts(pkg: Record<string, unknown>): ScanFlag[] {
     flags.push({ code: 'download-exec', severity: 'high', label: '安装脚本下载即执行 (curl/wget | shell)', files: ['package.json'] })
   }
   return flags
+}
+
+/** A plugin dependency resolved to an installed name + version. */
+export interface InstalledDependency {
+  name: string
+  version: string
+}
+
+/**
+ * Read the plugin's RESOLVED direct runtime dependencies by walking its own
+ * `node_modules` (one level, plus scoped `@scope/pkg`). With pnpm these top-level
+ * entries are symlinks into the store, and reading their package.json follows the
+ * symlink to the real exact version. Cross-filtered against the declared
+ * `dependencies` / `optionalDependencies` / `peerDependencies` so a dev-checkout's
+ * toolchain (typescript, esbuild, …) does not masquerade as runtime dependencies.
+ */
+export function readInstalledDependencies(pluginDir: string): InstalledDependency[] {
+  const declared = new Set<string>()
+  try {
+    const pkg = JSON.parse(readFileSync(join(pluginDir, 'package.json'), 'utf-8')) as Record<string, unknown>
+    for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      const deps = pkg[field]
+      if (deps !== null && typeof deps === 'object') {
+        for (const name of Object.keys(deps as Record<string, unknown>)) declared.add(name)
+      }
+    }
+  } catch {
+    /* package.json absent or unreadable */
+  }
+
+  const nodeModules = join(pluginDir, 'node_modules')
+  let entries: string[]
+  try {
+    entries = readdirSync(nodeModules).sort()
+  } catch {
+    return []
+  }
+
+  const found: InstalledDependency[] = []
+  const collect = (dir: string, name: string): void => {
+    if (!declared.has(name)) return
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')) as Record<string, unknown>
+      const version = typeof pkg.version === 'string' ? pkg.version : ''
+      if (version !== '') found.push({ name, version })
+    } catch {
+      /* missing/unreadable package.json */
+    }
+  }
+  for (const entry of entries) {
+    if (entry.startsWith('@')) {
+      let scoped: string[]
+      try {
+        scoped = readdirSync(join(nodeModules, entry)).sort()
+      } catch {
+        continue
+      }
+      for (const sub of scoped) {
+        if (sub.startsWith('.')) continue
+        collect(join(nodeModules, entry, sub), `${entry}/${sub}`)
+      }
+      continue
+    }
+    if (entry.startsWith('.')) continue
+    collect(join(nodeModules, entry), entry)
+  }
+  return found.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function scoreFor(flags: ScanFlag[]): { score: number; risk: RiskLevel } {
