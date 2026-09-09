@@ -29,6 +29,15 @@ interface DangerRule {
   re: RegExp
 }
 
+/**
+ * Download-and-execute chain: a network fetch piped straight to a shell or iex
+ * (the classic "curl | bash" supply-chain kicker). Deliberately single-line and
+ * length-bounded so `curl … && ./configure && make` build steps stay out.
+ */
+const DOWNLOAD_EXEC_RE = /\b(?:curl|wget|iwr|Invoke-WebRequest)\b[^\r\n]{0,120}\|\s*(?:sudo\s+)?(?:sh|bash|zsh|dash|iex|\/bin\/sh|\/bin\/bash)\b/gi
+/** Known secret/token formats plus a quoted long-value assignment for generic API keys. */
+const HARDCODED_SECRET_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\bAKIA[0-9A-Z]{16}\b|\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b|\bxox[baprs]-[A-Za-z0-9-]{12,}\b|\bsk_live_[A-Za-z0-9]{20,}\b|\bsk_test_[A-Za-z0-9]{20,}\b|\bsk-[A-Za-z0-9]{20,}\b|(?:api[_-]?key|apikey|secret[_-]?key|access[_-]?token|client[_-]?secret)\s*[:=]\s*['"`][A-Za-z0-9+/_\-]{24,}['"`]/gi
+
 /** Static danger rules, weighted by severity. */
 const DANGER_RULES: DangerRule[] = [
   { code: 'child-process', severity: 'high', label: '子进程执行 (child_process)', re: /\b(?:execSync|execFileSync|spawnSync|fork|exec|spawn|execFile)\s*\(|\brequire\s*\(\s*['"]child_process['"]\s*\)|from\s+['"]child_process['"]|import\s*\(\s*['"]child_process['"]\s*\)/g },
@@ -43,6 +52,8 @@ const DANGER_RULES: DangerRule[] = [
   { code: 'system-info', severity: 'low', label: '系统信息探测', re: /\b(?:os\.networkInterfaces|os\.hostname|os\.userInfo|os\.platform|os\.cpus|os\.homedir)\s*\(/g },
   { code: 'obfuscation', severity: 'low', label: '编码 / 混淆迹象', re: /\batob\s*\(|\bBuffer\.from\s*\(\s*['"][^'"]*['"]\s*,\s*['"]base64/gi },
   { code: 'exfil-url', severity: 'medium', label: '可疑外联地址', re: /(?:pastebin\.com|webhook\.site|requestbin|ngrok\.io|discord\.com\/api\/webhooks|api\.telegram\.org\/bot|\.onion\b)/gi },
+  { code: 'download-exec', severity: 'high', label: '下载即执行 (curl/wget 管道给 shell)', re: DOWNLOAD_EXEC_RE },
+  { code: 'hardcoded-secret', severity: 'high', label: '疑似硬编码密钥 / 令牌', re: HARDCODED_SECRET_RE },
 ]
 
 const SEVERITY_SCORE: Record<Severity, number> = { high: 40, medium: 18, low: 6 }
@@ -211,12 +222,19 @@ function checkInstallScripts(pkg: Record<string, unknown>): ScanFlag[] {
   const scripts = pkg.scripts as Record<string, string> ?? {}
   const risky = ['preinstall', 'install', 'postinstall'].filter(key => scripts[key] !== undefined)
   if (risky.length === 0) return []
-  return [{
+  const flags: ScanFlag[] = [{
     code: 'install-script',
     severity: 'high',
     label: `声明安装脚本 (${risky.join(', ')})`,
     files: ['package.json'],
   }]
+  // The supply-chain kicker: an install script that downloads and pipes straight to a shell.
+  const body = risky.map(key => String(scripts[key])).join('\n')
+  DOWNLOAD_EXEC_RE.lastIndex = 0
+  if (DOWNLOAD_EXEC_RE.test(body)) {
+    flags.push({ code: 'download-exec', severity: 'high', label: '安装脚本下载即执行 (curl/wget | shell)', files: ['package.json'] })
+  }
+  return flags
 }
 
 function scoreFor(flags: ScanFlag[]): { score: number; risk: RiskLevel } {
@@ -592,9 +610,10 @@ export function computePluginDeltas(plugins: PluginAudit[], baseline: BaselineSn
  * Hashing is content-based (not flag-based), so even a one-byte source change
  * invalidates the fingerprint and forces a re-audit.
  */
-export function computePluginFingerprint(pluginDir: string, version: string): string {
+export function computePluginFingerprint(pluginDir: string, version: string, modelKey = ''): string {
   const hash = createHash('sha256')
   hash.update('version\0' + version + '\0')
+  if (modelKey !== '') hash.update('model\0' + modelKey + '\0')
 
   for (const name of ['package.json', 'dsh.plugin.json']) {
     hash.update(name + '\0')

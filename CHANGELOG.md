@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-plugin force re-audit**: a 强制重审 / Force re-audit button next to each
   plugin's AI audit bypasses that plugin's cached verdict for one run, without
   changing the global TTL or audit config.
+- **Model identity in the verdict fingerprint**: the cache key now folds in the
+  default model (`provider/model`), so switching the default model invalidates an
+  otherwise-matching fingerprint within TTL instead of reusing another model's verdict.
+- **Hardcoded secret/token scan**: a new high-severity rule flags known key formats
+  (AWS / GitHub / Slack / Stripe / OpenAI / PRIVATE KEY) plus quoted long-value API-key
+  assignments.
+- **Download-and-execute rule**: flags the `curl | sh` / `wget | bash` / `| iex` chain
+  in source and inside install scripts.
 
 ### Changed
 

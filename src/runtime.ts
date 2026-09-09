@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal } from './ai-audit.ts'
+import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
 import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SecurityReport } from './contracts.ts'
 
@@ -240,7 +240,17 @@ export class GuardRuntime extends TypertRemoteService {
       }
 
       const pluginDir = join(profileDir, 'node_modules', plugin.name)
-      const fingerprint = computePluginFingerprint(pluginDir, plugin.version)
+      // Fold the default model identity into the fingerprint so switching models
+      // invalidates a would-be cache hit (the verdict is model-specific).
+      let modelKey = ''
+      try {
+        const model = resolveAuditModel(this.ctx)
+        modelKey = model.provider + '/' + model.model
+      } catch {
+        // No default model configured yet: leave the key empty; a cache miss still
+        // surfaces the missing-model error from the audit call itself.
+      }
+      const fingerprint = computePluginFingerprint(pluginDir, plugin.version, modelKey)
       const emit = (phase: AuditProgress['phase'], detail: string): void => {
         this.track(pluginName, phase, detail)
       }

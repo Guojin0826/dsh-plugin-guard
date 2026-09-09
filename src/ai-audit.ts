@@ -50,6 +50,20 @@ interface GuardContext {
 }
 
 /**
+ * Resolve the harness default model identity (provider/model) used for the LLM
+ * verdict — exported so the verdict cache can key on it too: switching the
+ * default model invalidates an otherwise-matching fingerprint within TTL.
+ */
+export function resolveAuditModel(ctx: Context): ModelSelection {
+  const guardCtx = ctx as unknown as GuardContext
+  const selection = guardCtx.agentDefaultModel.currentSelection()
+  if (selection === undefined || selection.provider === undefined || selection.model === undefined) {
+    throw new Error('AI 审计：未配置默认模型，请先在模型设置中选择默认模型')
+  }
+  return selection
+}
+
+/**
  * Model output bound. Reasoning models spend most of this budget on chain-of-
  * thought, so a small cap truncates the final JSON; the assessment JSON itself
  * is only a few hundred tokens. 32768 leaves generous room for reasoning +
@@ -863,10 +877,7 @@ export async function auditPluginWithAi(
     onProgress?.(phase, detail)
   }
 
-  const selection = guardCtx.agentDefaultModel.currentSelection()
-  if (selection === undefined || selection.provider === undefined || selection.model === undefined) {
-    throw new Error('AI 审计：未配置默认模型，请先在模型设置中选择默认模型')
-  }
+  const selection = resolveAuditModel(ctx)
   emit('calling', `预计调用默认模型 ${selection.provider}/${selection.model}`)
 
   const pluginDir = join(profileDir, 'node_modules', String(plugin.name))
