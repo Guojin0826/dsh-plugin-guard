@@ -230,6 +230,8 @@ export type AiVerdict = 'safe' | 'suspicious' | 'malicious' | 'inconclusive';
 export interface AiAssessment {
     readonly verdict: AiVerdict;
     readonly risk: RiskLevel;
+    /** 0–100 overall risk score assigned by the model after the audit (higher = riskier). */
+    readonly score: number;
     /** One or two sentences of human-readable risk assessment. */
     readonly summary: string;
     readonly concerns: string[];
@@ -345,6 +347,7 @@ export declare const aiAssessmentSchema: z.ZodReadonly<z.ZodObject<{
         yellow: "yellow";
         green: "green";
     }>>;
+    score: z.ZodOptional<z.ZodNumber>;
     summary: z.ZodString;
     concerns: z.ZodArray<z.ZodString>;
     recommendations: z.ZodArray<z.ZodString>;
@@ -456,6 +459,7 @@ export declare const aiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
         yellow: "yellow";
         green: "green";
     }>;
+    score: z.ZodNumber;
     summary: z.ZodString;
     concerns: z.ZodArray<z.ZodString>;
     recommendations: z.ZodArray<z.ZodString>;

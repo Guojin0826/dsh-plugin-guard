@@ -8,6 +8,7 @@ export interface SecuritySectionInjected {
   getAiAudit: (pluginName: string) => Promise<AiAuditResult>
   forceAiAudit: (pluginName: string) => Promise<AiAuditResult>
   getAiAuditStatus: (pluginName: string) => Promise<AuditProgress | null>
+  getAiAuditCacheSnapshot: () => Promise<AiAuditResult[]>
   getGithubTokenStatus: () => Promise<GithubTokenStatus>
   setGithubToken: (token: string) => Promise<GithubTokenStatus>
   getAuditConfig: () => Promise<AuditCacheConfig>
@@ -23,6 +24,24 @@ const VERDICT_KEY = {
   malicious: 'aiMalicious',
   inconclusive: 'aiInconclusive',
 } as const
+
+/**
+ * Fuse the static detection risk with the AI verdict. The AI audit is the deeper
+ * judgment layer (it reads claimed purpose + reputation), so once it returns, its
+ * verdict drives the classification: malicious→red, suspicious→yellow (red when
+ * static already found hard evidence), inconclusive→never drops below yellow of a
+ * flagged plugin, safe→green. A disagreement with the static risk is surfaced
+ * explicitly — never silently.
+ */
+function effRisk(staticRisk: PluginAudit['risk'], verdict: AiAuditResult['verdict'] | undefined): PluginAudit['risk'] {
+  if (verdict === undefined) return staticRisk
+  switch (verdict) {
+    case 'malicious': return 'red'
+    case 'suspicious': return staticRisk === 'red' ? 'red' : 'yellow'
+    case 'inconclusive': return staticRisk === 'green' ? 'yellow' : staticRisk
+    case 'safe': return 'green'
+  }
+}
 
 const palette = {
   red: '#d93025',
@@ -306,6 +325,7 @@ function AiAuditBox({ state, t }: { state: AiState; t: (key: string) => string }
     <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 6, border: `1px solid ${riskColor(result.risk)}`, background: riskBg(result.risk) }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <span style={{ fontWeight: 700, fontSize: 13, color: riskColor(result.risk) }}>{t('aiVerdict')}: {t(VERDICT_KEY[result.verdict])}</span>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>{t('colScore')}: {result.score}</span>
         <span style={{ fontSize: 11, color: palette.mute }}>{t('aiModel')}: {result.provider}/{result.model}</span>
         {result.cached === true && <span style={{ fontSize: 11, color: palette.mute, fontWeight: 600 }}>⟳ {t('cacheHit')}</span>}
       </div>
@@ -339,6 +359,9 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
   onForceAudit: () => void
   delta?: PluginDelta
 }): ReactElement {
+  const verdict = aiState.result?.verdict
+  const eff = effRisk(plugin.risk, verdict)
+  const aiScore = aiState.result?.score
   const badge = (
     <span style={{
       display: 'inline-block',
@@ -348,10 +371,10 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
       borderRadius: 10,
       fontSize: 12,
       fontWeight: 600,
-      color: riskColor(plugin.risk),
-      background: riskBg(plugin.risk),
+      color: riskColor(eff),
+      background: riskBg(eff),
     }}>
-      {t(RISK_KEY[plugin.risk])}
+      {t(RISK_KEY[eff])}
     </span>
   )
 
@@ -359,13 +382,20 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
     <details style={{ border: `1px solid ${palette.border}`, borderRadius: 8, marginTop: 12, overflow: 'hidden' }}>
       <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', flexWrap: 'wrap' }}>
         {badge}
+        {verdict !== undefined && (
+          <span style={{ fontSize: 11, fontWeight: 700, color: eff !== plugin.risk ? palette.yellow : palette.mute }}>
+            {t('aiVerdict')} {t(VERDICT_KEY[verdict])}{eff !== plugin.risk ? ` · ${t('staticBadge')} ${t(RISK_KEY[plugin.risk])}` : ''}
+          </span>
+        )}
         <code style={{ fontWeight: 600, fontSize: 14 }}>{plugin.name}</code>
         <span style={{ fontSize: 12, color: palette.mute }}>v{plugin.version}</span>
         {delta !== undefined && (
           <span style={{ fontSize: 11, fontWeight: 700, color: palette.red }}>{delta.isNew ? `🆕 ${t('deltaNew')}` : `↑ ${t('deltaChanged')}`}</span>
         )}
         <span style={{ fontSize: 11, opacity: 0.75 }}>{plugin.active ? t('active') : t('inactive')}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.mute }}>{t('colScore')}: {plugin.score}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.mute }}>
+          {t('colScore')}: {aiScore ?? plugin.score}{aiScore !== undefined ? ' · AI' : ''}
+        </span>
       </summary>
 
       <div style={{ borderTop: `1px solid ${palette.border}`, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -475,7 +505,7 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
   )
 }
 
-export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement {
+export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement {
   const [report, setReport] = useState<SecurityReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -624,8 +654,28 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
 
   useEffect(() => { void run() }, [])
 
+  // Restore AI classifications/scores that were cached before a page refresh.
+  const restoreAi = async (): Promise<void> => {
+    try {
+      const cached = await getAiAuditCacheSnapshot()
+      for (const result of cached) {
+        setAiState(result.pluginName, { loading: false, result, error: null, progress: null })
+      }
+    } catch {
+      // Best-effort restore: a manual AI audit always works regardless.
+    }
+  }
+  useEffect(() => { void restoreAi() }, [])
+
   const totalScanned = report?.plugins.reduce((sum, plugin) => sum + plugin.scannedFiles, 0) ?? 0
   const deltaMap = new Map((report?.deltas ?? []).map(delta => [delta.name, delta]))
+  const effCounts = { red: 0, yellow: 0, green: 0 }
+  for (const plugin of report?.plugins ?? []) {
+    const risk = effRisk(plugin.risk, getAiState(plugin.name).result?.verdict)
+    if (risk === 'red') effCounts.red += 1
+    else if (risk === 'yellow') effCounts.yellow += 1
+    else effCounts.green += 1
+  }
 
   return (
     <section style={{ padding: '4px 0' }}>
@@ -741,13 +791,13 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
           <div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 14 }}>
               <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 13, fontWeight: 600, color: palette.green, background: palette.greenBg }}>
-                {t('riskGreen')} {report.greenCount}
+                {t('riskGreen')} {effCounts.green}
               </span>
               <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 13, fontWeight: 600, color: palette.yellow, background: palette.yellowBg }}>
-                {t('riskYellow')} {report.yellowCount}
+                {t('riskYellow')} {effCounts.yellow}
               </span>
               <span style={{ padding: '4px 12px', borderRadius: 12, fontSize: 13, fontWeight: 600, color: palette.red, background: palette.redBg }}>
-                {t('riskRed')} {report.redCount}
+                {t('riskRed')} {effCounts.red}
               </span>
               <span style={{ marginLeft: 'auto', fontSize: 12, color: palette.mute }}>{t('filesScanned')}: {totalScanned}</span>
             </div>

@@ -26,6 +26,7 @@ interface GuardFace {
   getAiAudit(pluginName: string): Promise<RemoteOutcome<AiAuditResult>>
   forceAiAudit(pluginName: string): Promise<RemoteOutcome<AiAuditResult>>
   getAiAuditStatus(pluginName: string): Promise<RemoteOutcome<AuditProgress | null>>
+  getAiAuditCacheSnapshot(): Promise<RemoteOutcome<AiAuditResult[]>>
   getGithubTokenStatus(): Promise<RemoteOutcome<GithubTokenStatus>>
   setGithubToken(token: string): Promise<RemoteOutcome<GithubTokenStatus>>
   getAuditConfig(): Promise<RemoteOutcome<AuditCacheConfig>>
@@ -77,6 +78,12 @@ export function apply(ctx: ClientContext): void {
       getAiAuditStatus: async (pluginName: string) => {
         if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
         const result = await guard.getAiAuditStatus(pluginName)
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      getAiAuditCacheSnapshot: async () => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.getAiAuditCacheSnapshot()
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         return result.value
       },

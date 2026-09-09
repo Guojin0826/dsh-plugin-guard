@@ -22,6 +22,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     getReport: () => Promise<RemoteResult<SecurityReport>>
     getAiAudit: (pluginName: string) => Promise<RemoteResult<AiAuditResult>>
     getAiAuditStatus: (pluginName: string) => Promise<RemoteResult<AuditProgress | null>>
+    getAiAuditCacheSnapshot: () => Promise<RemoteResult<AiAuditResult[]>>
     getGithubTokenStatus: () => Promise<RemoteResult<GithubTokenStatus>>
     setGithubToken: (token: string) => Promise<RemoteResult<GithubTokenStatus>>
   }
@@ -29,6 +30,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'guard/getReport': () => Promise<RemoteResult<SecurityReport>>
     'guard/getAiAudit': (pluginName: string) => Promise<RemoteResult<AiAuditResult>>
     'guard/getAiAuditStatus': (pluginName: string) => Promise<RemoteResult<AuditProgress | null>>
+    'guard/getAiAuditCacheSnapshot': () => Promise<RemoteResult<AiAuditResult[]>>
     'guard/getGithubTokenStatus': () => Promise<RemoteResult<GithubTokenStatus>>
     'guard/setGithubToken': (token: string) => Promise<RemoteResult<GithubTokenStatus>>
   }

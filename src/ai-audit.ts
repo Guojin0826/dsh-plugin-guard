@@ -88,6 +88,7 @@ const SYSTEM_PROMPT = [
   '{',
   '  "verdict": "safe" | "suspicious" | "malicious" | "inconclusive",',
   '  "risk": "green" | "yellow" | "red",',
+  '  "score": 0到100的整数（整体风险分，越高越危险，必须与 verdict/risk 一致）,',
   '  "summary": "一两句中文风险评估概述",',
   '  "concerns": ["具体担忧点", "..."],',
   '  "recommendations": ["建议的处置措施", "..."]',
@@ -112,6 +113,7 @@ const SYSTEM_PROMPT = [
   '- "malicious": 有明显恶意意图（窃取数据、后门、挖矿、勒索、凭据外传等）。',
   '- "inconclusive": 静态证据与声誉信息都不足以得出结论。',
   '- risk 与 verdict 对应：malicious→red；suspicious→yellow（若含高危能力且意图存疑→red）；inconclusive→yellow；safe→green。',
+  '- score 是 0–100 的整体风险分（数字）：safe 通常 < 30、suspicious 约 40–70、malicious ≥ 70；要综合静态高危旗、声明的宿主权限、声誉负面信号与功能一致性打分，且必须与 verdict / risk 一致。',
   '',
   'concerns 与 recommendations 应基于"功能一致性 + 声誉"给出；若没有，输出空数组 []。summary 必须用中文，并说明插件功能与其危险能力之间的关系。',
   '只输出 JSON。',
@@ -341,6 +343,16 @@ function deriveRisk(verdict: AiAssessment['verdict']): RiskLevel {
     case 'safe': return 'green'
     case 'suspicious': return 'yellow'
     case 'inconclusive': return 'yellow'
+  }
+}
+
+/** Fallback 0–100 score when the model omits the field (also used for older cached results). */
+export function scoreFromVerdict(verdict: AiAssessment['verdict']): number {
+  switch (verdict) {
+    case 'malicious': return 90
+    case 'suspicious': return 65
+    case 'inconclusive': return 50
+    case 'safe': return 10
   }
 }
 
@@ -990,6 +1002,7 @@ export async function auditPluginWithAi(
   const assessment: AiAssessment = {
     verdict: parsed.verdict,
     risk: parsed.risk ?? deriveRisk(parsed.verdict),
+    score: parsed.score === undefined ? scoreFromVerdict(parsed.verdict) : Math.round(Math.min(100, Math.max(0, parsed.score))),
     summary: parsed.summary.trim(),
     concerns: parsed.concerns.filter(item => item.trim().length > 0),
     recommendations: parsed.recommendations.filter(item => item.trim().length > 0),

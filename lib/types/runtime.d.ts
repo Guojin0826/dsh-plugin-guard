@@ -49,6 +49,13 @@ export declare class GuardRuntime extends TypertRemoteService {
     getAiAudit(pluginName: string): Promise<AiAuditResult>;
     /** Bypass the verdict cache and always run a full model audit for one plugin (reputation still fetched fresh). */
     forceAiAudit(pluginName: string): Promise<AiAuditResult>;
+    /**
+     * Return every AI verdict still valid in the on-disk cache (fingerprint matched
+     * and within TTL), with no network access. The client calls this on mount to
+     * restore AI classifications/scores after a page refresh. Purely a display
+     * restore: a real `getAiAudit` still re-checks negative reputation signals.
+     */
+    getAiAuditCacheSnapshot(): Promise<AiAuditResult[]>;
     private runAiAudit;
     /** Poll the current AI audit progress for one plugin, or `null` when none has been recorded. */
     getAiAuditStatus(pluginName: string): Promise<AuditProgress | null>;

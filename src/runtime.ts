@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel } from './ai-audit.ts'
+import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
 import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SecurityReport } from './contracts.ts'
 
@@ -229,6 +229,39 @@ export class GuardRuntime extends TypertRemoteService {
     return this.runAiAudit(pluginName, true)
   }
 
+  /**
+   * Return every AI verdict still valid in the on-disk cache (fingerprint matched
+   * and within TTL), with no network access. The client calls this on mount to
+   * restore AI classifications/scores after a page refresh. Purely a display
+   * restore: a real `getAiAudit` still re-checks negative reputation signals.
+   */
+  @Remote
+  async getAiAuditCacheSnapshot(): Promise<AiAuditResult[]> {
+    const cache = this.loadAiCache()
+    if (cache.ttlHours <= 0) return []
+    const profileDir = this.profileDir()
+    const report = runAudit(profileDir, this.config.maxScanFiles)
+    let modelKey = ''
+    try {
+      const model = resolveAuditModel(this.ctx)
+      modelKey = model.provider + '/' + model.model
+    } catch {
+      // No default model yet: keep the key empty, mirroring `runAiAudit`.
+    }
+    const restored: AiAuditResult[] = []
+    for (const plugin of report.plugins) {
+      const entry = cache.plugins[plugin.name]
+      if (entry === undefined) continue
+      const pluginDir = join(profileDir, 'node_modules', plugin.name)
+      const fingerprint = computePluginFingerprint(pluginDir, plugin.version, modelKey)
+      if (entry.fingerprint !== fingerprint) continue
+      const ageHours = (Date.now() - new Date(entry.cachedAt).getTime()) / 3_600_000
+      if (!(Number.isFinite(ageHours) && ageHours >= 0 && ageHours < cache.ttlHours)) continue
+      restored.push({ ...entry.result, score: entry.result.score ?? scoreFromVerdict(entry.result.verdict), cached: true })
+    }
+    return restored
+  }
+
   private async runAiAudit(pluginName: string, force: boolean): Promise<AiAuditResult> {
     this.track(pluginName, 'collecting', '正在定位插件并运行静态扫描…')
     try {
@@ -270,7 +303,7 @@ export class GuardRuntime extends TypertRemoteService {
           emit('researching', '发现新的负面声誉信号，忽略缓存、强制重审…')
         } else {
           emit('done', '命中缓存，复用上次判定；声誉已拉取最新')
-          return { ...entry.result, reputation: freshReputation, cached: true }
+          return { ...entry.result, score: entry.result.score ?? scoreFromVerdict(entry.result.verdict), reputation: freshReputation, cached: true }
         }
       }
 

@@ -7,11 +7,12 @@ export interface SecuritySectionInjected {
     getAiAudit: (pluginName: string) => Promise<AiAuditResult>;
     forceAiAudit: (pluginName: string) => Promise<AiAuditResult>;
     getAiAuditStatus: (pluginName: string) => Promise<AuditProgress | null>;
+    getAiAuditCacheSnapshot: () => Promise<AiAuditResult[]>;
     getGithubTokenStatus: () => Promise<GithubTokenStatus>;
     setGithubToken: (token: string) => Promise<GithubTokenStatus>;
     getAuditConfig: () => Promise<AuditCacheConfig>;
     setAuditTtl: (ttlHours: number) => Promise<AuditCacheConfig>;
 }
 type SecuritySectionProps = InjectFace<SecuritySectionInjected> & PropsLocale<'dsh-plugin-guard'>;
-export declare function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement;
+export declare function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement;
 export {};

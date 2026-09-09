@@ -18,6 +18,7 @@
 - **Capability / declaration mismatch flag**: when the code hits high-severity capabilities but every declared service is low-power, the panel and the AI prompt raise a "high capability vs. light declared surface" warning — the strongest over-permission signal, computed deterministically instead of left for the model to infer.
 - **Version-diff alerting (continuous monitoring)**: each scan persists a baseline (`$DSH_HOME/storages/dsh-plugin-guard/baseline.json`) and the next scan diffs against it — the panel badges any plugin that is newly installed, changed version, or gained risk flags / declared permissions since last time. This turns a one-off snapshot into a change detector: the classic supply-chain attack (a trusted package shipping a malicious new version) surfaces directly as "changed since last scan: +install-script".
 - **AI online audit**: uses the default model to re-judge each plugin from "claimed features + static code evidence + layered internet reputation", returning a `safe / suspicious / malicious / inconclusive` verdict with recommendations. The **verdict** is cached by **content fingerprint (incl. the default model) + version + TTL**, while the **reputation layer (npm / OSV / web / GitHub) is re-fetched fresh on every run** — the last verdict is reused (marked "from cache") only when source / manifest / README are byte-identical, within TTL (default 3 days), and the fresh reputation has no new negative signal (a new advisory, a new malicious report, or a new deprecation); any such change forces a re-audit.
+- **Unified risk classification + scoring (AI re-classifies after review)**: the static risk score = code-flag score + declared-permission score (capped at 100); the static level is **red** on any high rule or a flag score ≥ 40, **yellow** at score ≥ 15, else **green**. After the AI audit finishes, its verdict **re-classifies** the plugin — `malicious`→red, `suspicious`→yellow (red when static is already red), `inconclusive`→never below static (green→yellow), `safe`→green — and the **0–100 score is assigned by the model** (safe usually < 30, suspicious ~40–70, malicious ≥ 70). Any AI/static disagreement is shown next to the badge ("AI … · Static …", never a silent downgrade); refreshing the page restores still-valid verdicts and scores from the local cache.
 - **Reputation evidence** (multi-source online verification; every lookup is best-effort and degrades gracefully, never blocking the audit):
   - **npm registry metadata**: description, maintainers, publish/update dates, weekly downloads, **package age** (new packages < 30 days are flagged red — malware is often published → exploited → removed within days) and the **deprecated** notice (an authoritative "do not trust" signal from the maintainer);
   - **OSV.dev authoritative records**: whether the package is listed in the official vulnerability / malicious-package database — `MAL-*` or "Malicious" entries are highlighted as malicious and are a strong signal;
@@ -61,7 +62,7 @@ Each third-party plugin gets one row with:
 
 - a **risk badge** (green / yellow / red);
 - the plugin name, version, and whether it is active;
-- its **risk score**, flags, **declared permissions**, dependencies, and number of files scanned.
+- its **risk score** (assigned by the AI 0–100 once audited; static before that), flags, **declared permissions**, dependencies, and number of files scanned.
 
 Expanding a row reveals **what changed since the last scan** (if anything: version bump, newly gained risk flags / declared permissions), every matched rule with the files that triggered it, the **declared host-service permissions** (with a mismatch warning), suspicious dependencies, and any scan errors.
 
@@ -72,7 +73,7 @@ Every plugin row has an **AI Audit** button. Clicking it:
 1. shows live progress (collect evidence → reputation lookup → model call → parse result);
 2. returns a verdict (`Safe` / `Suspicious` / `Malicious` / `Inconclusive`), concerns, recommendations, and reputation evidence.
 
-Audit results persist: closing and reopening the settings panel still shows finished (or in-flight) results.
+Audit results persist: closing and reopening the settings panel still shows finished (or in-flight) results, and **still-valid verdicts and AI scores are restored from the local cache after a page refresh**.
 
 **Result cache**: the *verdict* is written to a local cache (content fingerprint (incl. the default model) + version + TTL, default 72 h = 3 days), while the **reputation evidence (npm / OSV / web / GitHub) is re-fetched fresh on every run**. The cached verdict is reused — marked "from cache" — only while source, manifest, and README are unchanged, within TTL, and the fresh reputation has no new negative signal (a new advisory, a new malicious report, or a new deprecation); any new signal discards the cache and forces a re-audit. The panel has an **AI cache TTL** field to change the hours; setting it to 0 disables the cache. A **Force re-audit** button next to each plugin's AI audit bypasses that plugin's cache for one run without changing the global TTL.
 
@@ -122,7 +123,7 @@ A plugin declares the host services it needs via `dsh.plugin.json` `entry.inject
 | Medium | unrecognized service, defaults to "review it" | any name not in the table above |
 | Low | UI / i18n / config / data-flow only | `locale`, `slots`, `ui-settings`, `renderer`, … |
 
-- **Permission score**: High 40 / Medium 18 / Low 6, capped at 100 (the same weights as the static risk score), **independent of** the green / yellow / red risk level — a supplementary signal only.
+- **Permission score**: High 40 / Medium 18 / Low 6, the same weights as the static risk score; it is now **folded into the overall risk score** (code-flag score + permission score, capped at 100), so a plugin that only declares powerful services pushes to "yellow" even with no code flags — "red" still requires risky **code** (a high rule or a flag score ≥ 40), so simply declaring `llm` never yields red.
 - **Capability / declaration mismatch**: fires when the code hits any high-severity capability AND every declared service is low (it does NOT fire when nothing is declared, to avoid false positives). This is the strongest over-permission signal and is also fed to the AI audit.
 
 ### Scan boundaries
@@ -131,11 +132,15 @@ For accuracy and performance, the scan skips `node_modules`, `.git`, and `.pnpm`
 
 ## How risks are scored
 
-- **Scoring**: High = 40, Medium = 18, Low = 6, total capped at 100.
-- **Risk level**:
-  - any **High** hit, or a total ≥ 40 → **red**;
-  - any **Medium** hit, or a total ≥ 15 → **yellow**;
+- **Static scoring**: High = 40, Medium = 18, Low = 6; the **risk score = code-flag score + declared-permission score**, capped at 100.
+- **Static risk level** (before any AI audit):
+  - any **High** rule hit, or a code-flag score ≥ 40 (e.g. three Mediums) → **red**;
+  - risk score ≥ 15 → **yellow**;
   - otherwise → **green**.
+- **After the AI audit — re-classification + score**:
+  - verdict-driven level: `malicious` → red; `suspicious` → yellow (red when static is already red); `inconclusive` → never below static (green→yellow); `safe` → green.
+  - the **0–100 score is assigned by the model**: safe usually < 30, suspicious ~40–70, malicious ≥ 70; when omitted it falls back to malicious 90 / suspicious 65 / inconclusive 50 / safe 10.
+  - any AI/static disagreement is shown next to the badge ("AI … · Static …"), never a silent downgrade (the deterministic flags stay visible in the list).
 
 The AI audit's guiding principle: **dangerous capability by itself is not malicious**. It weighs whether a plugin's *claimed features* match what it *actually does* — a file manager reading and writing files, or a code runner executing commands, is expected; a calculator quietly reading SSH keys, or an unknown new package phoning data home, is the real signal.
 

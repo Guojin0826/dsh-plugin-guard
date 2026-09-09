@@ -304,13 +304,13 @@ export function readInstalledDependencies(pluginDir: string): InstalledDependenc
   return found.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function scoreFor(flags: ScanFlag[]): { score: number; risk: RiskLevel } {
-  let score = 0
-  for (const flag of flags) score += SEVERITY_SCORE[flag.severity]
-  score = Math.min(score, 100)
-  const risk: RiskLevel = flags.some(flag => flag.severity === 'high') || score >= 40
+function scoreFor(flags: ScanFlag[], permScore: number): { score: number; risk: RiskLevel } {
+  let flagsScore = 0
+  for (const flag of flags) flagsScore += SEVERITY_SCORE[flag.severity]
+  const score = Math.min(flagsScore + permScore, 100)
+  const risk: RiskLevel = flags.some(flag => flag.severity === 'high') || flagsScore >= 40
     ? 'red'
-    : flags.some(flag => flag.severity === 'medium') || score >= 15
+    : score >= 15
       ? 'yellow'
       : 'green'
   return { score, risk }
@@ -396,7 +396,7 @@ function auditPlugin(nodeModules: string, name: string, spec: string, active: bo
     && permissions.length > 0
     && !permissions.some(permission => permission.severity === 'high')
 
-  const { score, risk } = scoreFor(flags)
+  const { score, risk } = scoreFor(flags, permScore)
   const merged = new Map<string, ScanFlag>()
   for (const flag of flags) {
     const existing = merged.get(flag.code)

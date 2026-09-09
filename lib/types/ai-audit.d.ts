@@ -10,7 +10,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { type PluginMetadata } from './scanner.ts';
-import { type AiAuditResult, type AuditPhase, type PluginAudit, type ReputationEvidence } from './contracts.ts';
+import { type AiAssessment, type AiAuditResult, type AuditPhase, type PluginAudit, type ReputationEvidence } from './contracts.ts';
 /** Minimal callable faces; the module stays independent of exact package types. */
 interface ModelSelection {
     provider: string;
@@ -22,6 +22,8 @@ interface ModelSelection {
  * default model invalidates an otherwise-matching fingerprint within TTL.
  */
 export declare function resolveAuditModel(ctx: Context): ModelSelection;
+/** Fallback 0–100 score when the model omits the field (also used for older cached results). */
+export declare function scoreFromVerdict(verdict: AiAssessment['verdict']): number;
 /**
  * True when the fresh reputation carries a negative signal the cached verdict
  * never saw: a new OSV advisory, a new relevance-filtered malicious/attack web

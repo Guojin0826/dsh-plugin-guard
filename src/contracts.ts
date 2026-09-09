@@ -157,6 +157,8 @@ export type AiVerdict = 'safe' | 'suspicious' | 'malicious' | 'inconclusive'
 export interface AiAssessment {
   readonly verdict: AiVerdict
   readonly risk: RiskLevel
+  /** 0–100 overall risk score assigned by the model after the audit (higher = riskier). */
+  readonly score: number
   /** One or two sentences of human-readable risk assessment. */
   readonly summary: string
   readonly concerns: string[]
@@ -266,6 +268,7 @@ export const aiVerdictSchema = z.enum(['safe', 'suspicious', 'malicious', 'incon
 export const aiAssessmentSchema = z.object({
   verdict: aiVerdictSchema,
   risk: riskLevelSchema.optional(),
+  score: z.number().min(0).max(100).optional(),
   summary: z.string().min(1),
   concerns: z.array(z.string()),
   recommendations: z.array(z.string()),
@@ -332,6 +335,7 @@ export const aiAuditResultSchema = z.object({
   model: z.string().min(1),
   verdict: aiVerdictSchema,
   risk: riskLevelSchema,
+  score: z.number().int().min(0).max(100),
   summary: z.string().min(1),
   concerns: z.array(z.string()),
   recommendations: z.array(z.string()),
@@ -544,6 +548,19 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
       mode: 'strict',
       typeSymbol: 'dsh-plugin-guard#AuditCacheConfig',
       schema: auditCacheConfigSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/getAiAuditCacheSnapshot',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'getAiAuditCacheSnapshot',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#AiAuditResult[]',
+      schema: z.array(aiAuditResultSchema),
     },
   },
 ]

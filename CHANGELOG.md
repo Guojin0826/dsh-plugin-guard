@@ -78,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Unified risk classification + scoring (AI re-classifies after review)**: the
+  static `score` now also counts declared host-service power (`permScore`), so a plugin
+  declaring powerful services is no longer "green just because the code scan found
+  nothing"; and once the AI audit returns, its verdict **re-classifies** the plugin —
+  `malicious`→high, `suspicious`→warn, `inconclusive`→never below warn, `safe`→ok — on
+  both the row badge and the header counts, with an explicit "AI vs static" annotation
+  whenever the two disagree (never a silent downgrade). The 0–100 `score` shown is now
+  also **assigned by the model** after the audit (with a verdict-based fallback for
+  older cached results); before an AI review it remains the static detection score.
 - The AI audit prompt now receives the declared-permission list, the permission
   score, and the mismatch flag, grounding its "capability vs. claimed purpose"
   judgment in the plugin's own declared host-service surface.
@@ -90,6 +99,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refreshing the page no longer flushes the AI verdict/score/badges: a new offline
+  `getAiAuditCacheSnapshot` RPC restores every still-valid cached result
+  (fingerprint + TTL matched) on mount, so the classification, score, and expanded
+  audit box survive reloads without re-running audits or re-fetching reputation.
 - Reasoning models (e.g. `deepseek-v4-pro`) that emit a ` thinking…` block
   before the JSON no longer trigger a first-parse failure: reasoning blocks
   (` thinking` / `<thinking>` / `<reasoning>` / `<scratchpad>`) are stripped

@@ -95,6 +95,7 @@ export const zh: Record<string, string> = {
   aiSecurity: '安全策略',
   aiDeps: '依赖漏洞检查 (OSV.dev)',
   aiDepsClean: '直接依赖未发现已知漏洞',
+  staticBadge: '静态',
 }
 
 export const en: Record<string, string> = {
@@ -169,6 +170,7 @@ export const en: Record<string, string> = {
   aiSecurity: 'Security policy',
   aiDeps: 'Dependency vulns (OSV.dev)',
   aiDepsClean: 'no known vulns in direct dependencies',
+  staticBadge: 'Static',
   aiMaintainers: 'Maintainers',
   aiWebReports: 'Web malicious/attack reports',
   aiWebNoReports: 'No malicious/attack reports found for this plugin',
