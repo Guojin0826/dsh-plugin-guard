@@ -44,7 +44,7 @@ export const Config = z.object({
  * @param config - validated plugin configuration (schema defaults applied).
  */
 export function apply(ctx: Context, config?: Config): void {
-  const resolved = Config(config ?? {}) as Config & { profile: string; maxScanFiles: number; githubToken: string }
+  const resolved = Config(config ?? {})
   new GuardRuntime(ctx, { profile: resolved.profile, maxScanFiles: resolved.maxScanFiles, githubToken: resolved.githubToken })
 
   ctx.effect(() => {

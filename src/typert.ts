@@ -35,6 +35,16 @@ export const TYPERT_MANIFEST: TypertContribution = {
           },
           {
             kind: 'method',
+            name: 'forceAiAudit',
+            signature: 'forceAiAudit(pluginName: string): Promise<AiAuditResult>',
+          },
+          {
+            kind: 'method',
+            name: 'getAiAuditCacheSnapshot',
+            signature: 'getAiAuditCacheSnapshot(): Promise<AiAuditResult[]>',
+          },
+          {
+            kind: 'method',
             name: 'getAiAuditStatus',
             signature: 'getAiAuditStatus(pluginName: string): Promise<AuditProgress | null>',
           },
@@ -47,6 +57,16 @@ export const TYPERT_MANIFEST: TypertContribution = {
             kind: 'method',
             name: 'setGithubToken',
             signature: 'setGithubToken(token: string): Promise<GithubTokenStatus>',
+          },
+          {
+            kind: 'method',
+            name: 'getAuditConfig',
+            signature: 'getAuditConfig(): Promise<AuditCacheConfig>',
+          },
+          {
+            kind: 'method',
+            name: 'setAuditTtl',
+            signature: 'setAuditTtl(ttlHours: number): Promise<AuditCacheConfig>',
           },
         ],
         types: [],
