@@ -10,7 +10,7 @@
  * has already executed at `import()` time.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { DepFinding, PermissionFinding, PluginAudit, PluginDelta, RiskLevel, ScanFlag, SecurityReport, Severity } from './contracts.ts'
 
@@ -18,6 +18,16 @@ import type { DepFinding, PermissionFinding, PluginAudit, PluginDelta, RiskLevel
 const SCAN_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx'])
 /** Directories never descended into. */
 const SKIP_DIRS = new Set(['node_modules', '.git', '.pnpm'])
+
+/**
+ * npm package-name shape (unscoped or `@scope/name`). Guards every path join
+ * built from a plugin name — an audited plugin's name must round-trip through
+ * this before it can reach `join(..., 'node_modules', name)`.
+ */
+const SAFE_PACKAGE_NAME = /^(?:@[a-z0-9._~-]+\/)?[a-z0-9._~-]+$/i
+export function isSafePackageName(name: string): boolean {
+  return name.length > 0 && !name.includes('..') && !name.includes('\\') && SAFE_PACKAGE_NAME.test(name)
+}
 /** Per-file read cap; larger files are skipped to bound scan time. */
 const MAX_FILE_BYTES = 1024 * 1024
 
@@ -79,10 +89,13 @@ function* walkSource(dir: string, depth: number, maxDepth: number): Generator<st
     const full = join(dir, name)
     let st
     try {
-      st = statSync(full)
+      // lstat (not stat) so symlinks are seen as links, not followed: an audited
+      // untrusted plugin could place one pointing at arbitrary host files.
+      st = lstatSync(full)
     } catch {
       continue
     }
+    if (st.isSymbolicLink()) continue
     if (st.isDirectory()) {
       if (SKIP_DIRS.has(name) || depth >= maxDepth) continue
       yield* walkSource(full, depth + 1, maxDepth)
@@ -624,6 +637,8 @@ export function runAudit(profileDir: string, maxScanFiles: number): SecurityRepo
   for (const [name, spec] of Object.entries(deps)) {
     // In-box core bundles are the trusted harness itself; skip them.
     if (name.startsWith('@deepseek-ai/')) continue
+    // Malformed manifest keys can never be installed dirs; never build a path from them.
+    if (!isSafePackageName(name)) continue
     plugins.push(auditPlugin(nodeModules, name, String(spec), bundles.has(name), maxScanFiles))
   }
 

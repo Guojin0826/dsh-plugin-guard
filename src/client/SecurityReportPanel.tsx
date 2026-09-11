@@ -1,6 +1,6 @@
 /** Settings section rendering the plugin security audit report (green/yellow/red) plus per-plugin AI audit with live progress. */
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { useEffect, useReducer, useState, type ReactElement } from 'react'
+import { useEffect, useReducer, useRef, useState, type ReactElement } from 'react'
 import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SecurityReport } from '../contracts.ts'
 
 export interface SecuritySectionInjected {
@@ -525,8 +525,14 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
   const [ttlError, setTtlError] = useState<string | null>(null)
   const [ttlSaved, setTtlSaved] = useState(false)
 
+  // In-flight AI-audit progress poll, cleared on unmount to avoid leaking the interval.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Re-render whenever the module-level AI store changes (results survive unmount).
   useEffect(() => subscribeAi(forceRender), [])
+
+  // Stop the AI-audit progress poll if the section unmounts mid-audit.
+  useEffect(() => () => { if (pollRef.current !== null) clearInterval(pollRef.current) }, [])
 
   // Load the masked token state once on mount.
   useEffect(() => {
@@ -638,12 +644,15 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
         })
         .catch(() => { /* poll errors are non-fatal; the audit RPC still reports the final failure */ })
     }, 1200)
+    pollRef.current = poll
     try {
       const result = await invoke(pluginName)
       clearInterval(poll)
+      pollRef.current = null
       setAiState(pluginName, { loading: false, result, error: null, progress: null })
     } catch (cause) {
       clearInterval(poll)
+      pollRef.current = null
       const message = cause instanceof Error ? cause.message : String(cause)
       setAiState(pluginName, { loading: false, result: null, error: message, progress: null })
     }

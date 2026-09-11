@@ -5,7 +5,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
@@ -91,8 +91,12 @@ export class GuardRuntime extends TypertRemoteService {
         rmSync(file, { force: true })
         return
       }
-      mkdirSync(this.tokenDir(), { recursive: true })
+      // Host-local secret: owner-only dir/file (0700/0600) narrows exposure to
+      // same-user processes. OS-keychain encryption is disproportionate for a
+      // rate-limit token that is never returned to the client.
+      mkdirSync(this.tokenDir(), { recursive: true, mode: 0o700 })
       writeFileSync(file, token, 'utf-8')
+      chmodSync(file, 0o600)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.warn(`[plugin-guard] 无法持久化 GitHub token: ${message}`)

@@ -1,4 +1,5 @@
 import type { PluginAudit, PluginDelta, SecurityReport, Severity } from './contracts.ts';
+export declare function isSafePackageName(name: string): boolean;
 /** A plugin dependency resolved to an installed name + version. */
 export interface InstalledDependency {
     name: string;
