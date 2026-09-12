@@ -616,6 +616,22 @@ export interface SkillEntry {
     readonly name: string;
     readonly description: string;
 }
+/** One cached SafeSkill scan result, keyed by the skill's content SHA-256. */
+export interface SafeSkillCacheEntry {
+    readonly contentHash: string;
+    readonly safeSkillSha256: string;
+    readonly report: SafeSkillReport;
+    readonly cachedAt: number;
+    readonly skillName: string;
+}
+/** Result from a single-skill scan (cache-aware) or batch scan. */
+export interface SkillScanResult {
+    readonly skillName: string;
+    readonly report: SafeSkillReport | null;
+    readonly fromCache: boolean;
+    readonly cachedAt: number | null;
+    readonly error: string | null;
+}
 export declare const safeSkillThreatSchema: z.ZodEnum<{
     unknown: "unknown";
     suspicious: "suspicious";
@@ -670,6 +686,74 @@ export declare const safeSkillStatusSchema: z.ZodReadonly<z.ZodObject<{
 export declare const skillEntrySchema: z.ZodReadonly<z.ZodObject<{
     name: z.ZodString;
     description: z.ZodString;
+}, z.core.$strip>>;
+export declare const safeSkillCacheEntrySchema: z.ZodReadonly<z.ZodObject<{
+    contentHash: z.ZodString;
+    safeSkillSha256: z.ZodString;
+    report: z.ZodReadonly<z.ZodObject<{
+        skillName: z.ZodString;
+        sha256: z.ZodString;
+        threatLevel: z.ZodEnum<{
+            unknown: "unknown";
+            suspicious: "suspicious";
+            malicious: "malicious";
+            clean: "clean";
+        }>;
+        threatClassify: z.ZodString;
+        trustScore: z.ZodNumber;
+        multiVerdict: z.ZodRecord<z.ZodString, z.ZodString>;
+        indicators: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+            indicator: z.ZodString;
+            category: z.ZodString;
+            severity: z.ZodEnum<{
+                high: "high";
+                medium: "medium";
+                low: "low";
+            }>;
+            evidence: z.ZodString;
+            sources: z.ZodArray<z.ZodObject<{
+                file: z.ZodString;
+                lines: z.ZodString;
+            }, z.core.$strip>>;
+        }, z.core.$strip>>>;
+        permalink: z.ZodString;
+    }, z.core.$strip>>;
+    cachedAt: z.ZodNumber;
+    skillName: z.ZodString;
+}, z.core.$strip>>;
+export declare const skillScanResultSchema: z.ZodReadonly<z.ZodObject<{
+    skillName: z.ZodString;
+    report: z.ZodNullable<z.ZodReadonly<z.ZodObject<{
+        skillName: z.ZodString;
+        sha256: z.ZodString;
+        threatLevel: z.ZodEnum<{
+            unknown: "unknown";
+            suspicious: "suspicious";
+            malicious: "malicious";
+            clean: "clean";
+        }>;
+        threatClassify: z.ZodString;
+        trustScore: z.ZodNumber;
+        multiVerdict: z.ZodRecord<z.ZodString, z.ZodString>;
+        indicators: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+            indicator: z.ZodString;
+            category: z.ZodString;
+            severity: z.ZodEnum<{
+                high: "high";
+                medium: "medium";
+                low: "low";
+            }>;
+            evidence: z.ZodString;
+            sources: z.ZodArray<z.ZodObject<{
+                file: z.ZodString;
+                lines: z.ZodString;
+            }, z.core.$strip>>;
+        }, z.core.$strip>>>;
+        permalink: z.ZodString;
+    }, z.core.$strip>>>;
+    fromCache: z.ZodBoolean;
+    cachedAt: z.ZodNullable<z.ZodNumber>;
+    error: z.ZodNullable<z.ZodString>;
 }, z.core.$strip>>;
 /** The plugin-guard Remote namespace's strict invocation descriptors. */
 export declare const GUARD_INVOCATIONS: readonly InvocationDescriptor[];

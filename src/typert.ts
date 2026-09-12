@@ -88,6 +88,16 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'scanSkill',
             signature: 'scanSkill(skillName: string): Promise<SafeSkillReport>',
           },
+          {
+            kind: 'method',
+            name: 'getSafeSkillCacheSnapshot',
+            signature: 'getSafeSkillCacheSnapshot(): Promise<SkillScanResult[]>',
+          },
+          {
+            kind: 'method',
+            name: 'scanAllSkills',
+            signature: 'scanAllSkills(): Promise<SkillScanResult[]>',
+          },
         ],
         types: [],
       },

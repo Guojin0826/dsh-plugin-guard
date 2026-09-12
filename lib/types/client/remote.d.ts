@@ -5,8 +5,8 @@
  * browser bundle and the host manifest stay on one wire definition.
  */
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol';
-import type { AiAuditResult, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry } from '../contracts.ts';
-export type { SecurityReport, AiAuditResult, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SkillEntry } from '../contracts.ts';
+import type { AiAuditResult, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts';
+export type { SecurityReport, AiAuditResult, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SkillEntry, SkillScanResult } from '../contracts.ts';
 /** The guard Remote namespace's client contribution. */
 export declare const GUARD_REMOTE: TypertRemoteContribution;
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -22,6 +22,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         setSafeSkillKey: (key: string) => Promise<RemoteResult<SafeSkillStatus>>;
         listSkills: () => Promise<RemoteResult<SkillEntry[]>>;
         scanSkill: (skillName: string) => Promise<RemoteResult<SafeSkillReport>>;
+        getSafeSkillCacheSnapshot: () => Promise<RemoteResult<SkillScanResult[]>>;
+        scanAllSkills: () => Promise<RemoteResult<SkillScanResult[]>>;
     }
     interface TypertRemoteMap {
         'guard/getReport': () => Promise<RemoteResult<SecurityReport>>;
@@ -34,6 +36,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         'guard/setSafeSkillKey': (key: string) => Promise<RemoteResult<SafeSkillStatus>>;
         'guard/listSkills': () => Promise<RemoteResult<SkillEntry[]>>;
         'guard/scanSkill': (skillName: string) => Promise<RemoteResult<SafeSkillReport>>;
+        'guard/getSafeSkillCacheSnapshot': () => Promise<RemoteResult<SkillScanResult[]>>;
+        'guard/scanAllSkills': () => Promise<RemoteResult<SkillScanResult[]>>;
     }
     interface TypertRemoteNamespaceMap {
         guard: TypertRemoteNamespace$guard;

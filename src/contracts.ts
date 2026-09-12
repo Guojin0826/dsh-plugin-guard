@@ -426,6 +426,24 @@ export interface SkillEntry {
   readonly description: string
 }
 
+/** One cached SafeSkill scan result, keyed by the skill's content SHA-256. */
+export interface SafeSkillCacheEntry {
+  readonly contentHash: string
+  readonly safeSkillSha256: string
+  readonly report: SafeSkillReport
+  readonly cachedAt: number
+  readonly skillName: string
+}
+
+/** Result from a single-skill scan (cache-aware) or batch scan. */
+export interface SkillScanResult {
+  readonly skillName: string
+  readonly report: SafeSkillReport | null
+  readonly fromCache: boolean
+  readonly cachedAt: number | null
+  readonly error: string | null
+}
+
 export const safeSkillThreatSchema = z.enum(['malicious', 'suspicious', 'unknown', 'clean'])
 
 export const safeSkillIndicatorSchema = z.object({
@@ -454,6 +472,22 @@ export const safeSkillStatusSchema = z.object({
 export const skillEntrySchema = z.object({
   name: z.string().min(1),
   description: z.string(),
+}).readonly()
+
+export const safeSkillCacheEntrySchema = z.object({
+  contentHash: z.string().min(1),
+  safeSkillSha256: z.string().min(1),
+  report: safeSkillReportSchema,
+  cachedAt: z.number().int().positive(),
+  skillName: z.string().min(1),
+}).readonly()
+
+export const skillScanResultSchema = z.object({
+  skillName: z.string().min(1),
+  report: safeSkillReportSchema.nullable(),
+  fromCache: z.boolean(),
+  cachedAt: z.number().nullable(),
+  error: z.string().nullable(),
 }).readonly()
 
 /** The plugin-guard Remote namespace's strict invocation descriptors. */
@@ -702,6 +736,32 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
       mode: 'strict',
       typeSymbol: 'dsh-plugin-guard#SafeSkillReport',
       schema: safeSkillReportSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/getSafeSkillCacheSnapshot',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'getSafeSkillCacheSnapshot',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SkillScanResult[]',
+      schema: z.array(skillScanResultSchema),
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/scanAllSkills',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'scanAllSkills',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SkillScanResult[]',
+      schema: z.array(skillScanResultSchema),
     },
   },
 ]

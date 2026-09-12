@@ -117,6 +117,10 @@ export const zh: Record<string, string> = {
   skillThreatSuspicious: '可疑',
   skillThreatUnknown: '未知',
   skillThreatClean: '安全',
+  skillScanAll: '扫描全部',
+  skillScanningAll: '扫描中… {current}/{total}',
+  skillFromCache: '（缓存）',
+  skillScanFail: '扫描失败',
 }
 
 export const en: Record<string, string> = {
@@ -233,6 +237,10 @@ export const en: Record<string, string> = {
   skillThreatSuspicious: 'Suspicious',
   skillThreatUnknown: 'Unknown',
   skillThreatClean: 'Clean',
+  skillScanAll: 'Scan All',
+  skillScanningAll: 'Scanning… {current}/{total}',
+  skillFromCache: '(cached)',
+  skillScanFail: 'Scan failed',
 }
 
 /** The guard locale namespace's dictionary key domain. */

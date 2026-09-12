@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { GUARD_REMOTE } from './remote.ts'
 import { SecuritySection, type SecuritySectionInjected } from './SecurityReportPanel.tsx'
 import { NS, zh, en } from './locales.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts'
 
 /** Required services: the Remote face, the slot registry, and locale. */
 export const inject = ['remote', 'slots', 'locale']
@@ -35,6 +35,8 @@ interface GuardFace {
   setSafeSkillKey(key: string): Promise<RemoteOutcome<SafeSkillStatus>>
   listSkills(): Promise<RemoteOutcome<SkillEntry[]>>
   scanSkill(skillName: string): Promise<RemoteOutcome<SafeSkillReport>>
+  getSafeSkillCacheSnapshot(): Promise<RemoteOutcome<SkillScanResult[]>>
+  scanAllSkills(): Promise<RemoteOutcome<SkillScanResult[]>>
 }
 
 /** Compose the security-report surface. */
@@ -136,6 +138,18 @@ export function apply(ctx: ClientContext): void {
       scanSkill: async (skillName: string) => {
         if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
         const result = await guard.scanSkill(skillName)
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      getSafeSkillCacheSnapshot: async () => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.getSafeSkillCacheSnapshot()
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      scanAllSkills: async () => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.scanAllSkills()
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         return result.value
       },

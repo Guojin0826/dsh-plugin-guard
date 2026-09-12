@@ -9,8 +9,8 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:
 import { join } from 'node:path'
 import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
-import { listLocalSkills, runSafeSkillScan } from './safeskill.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry } from './contracts.ts'
+import { getCachedResults, listLocalSkills, runSafeSkillScan, scanSkillWithCache } from './safeskill.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts'
 
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
@@ -402,9 +402,34 @@ export class GuardRuntime extends TypertRemoteService {
     return listLocalSkills()
   }
 
-  /** Pack one skill and submit it to SafeSkill for multi-engine detection. */
+  /** Pack one skill and submit it to SafeSkill for multi-engine detection (cache-aware). */
   @Remote
   async scanSkill(skillName: string): Promise<SafeSkillReport> {
-    return runSafeSkillScan(skillName, this.safeSkillKey)
+    const { report } = await scanSkillWithCache(skillName, this.safeSkillKey)
+    return report
+  }
+
+  /** Return every cached SafeSkill scan result so the panel can restore after refresh. */
+  @Remote
+  async getSafeSkillCacheSnapshot(): Promise<SkillScanResult[]> {
+    return getCachedResults()
+  }
+
+  /** Serial scan of every locally installed skill (cache-aware per skill, errors caught individually). */
+  @Remote
+  async scanAllSkills(): Promise<SkillScanResult[]> {
+    if (this.safeSkillKey === '') throw new Error('未配置 SafeSkill API Key')
+    const skills = listLocalSkills()
+    const results: SkillScanResult[] = []
+    for (const skill of skills) {
+      try {
+        const { report, fromCache } = await scanSkillWithCache(skill.name, this.safeSkillKey)
+        results.push({ skillName: skill.name, report, fromCache, cachedAt: fromCache ? Date.now() : null, error: null })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        results.push({ skillName: skill.name, report: null, fromCache: false, cachedAt: null, error: msg })
+      }
+    }
+    return results
   }
 }

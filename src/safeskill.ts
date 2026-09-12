@@ -9,10 +9,11 @@
  *
  * Node-only: imported exclusively by the Host runtime, never the browser bundle.
  */
-import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { isSafePackageName } from './scanner.ts'
-import type { SafeSkillReport, SafeSkillThreat, SafeSkillIndicator, SkillEntry } from './contracts.ts'
+import type { SafeSkillReport, SafeSkillThreat, SafeSkillIndicator, SkillEntry, SafeSkillCacheEntry, SkillScanResult } from './contracts.ts'
 import type { Severity } from './contracts.ts'
 
 const SAFESKILL_API = 'https://api.safeskill.cn'
@@ -341,4 +342,100 @@ export async function runSafeSkillScan(skillName: string, apiKey: string): Promi
   if (files.length === 0) throw new Error(`skill \"${skillName}\" 目录为空`)
   const { sha256, permalink } = await submitSkill(zipStored(files), `${skillName}.zip`, apiKey)
   return pollReport(skillName, sha256, permalink, apiKey)
+}
+
+// ── Search-first cache layer ───────────────────────────────────────────────
+// Before uploading to SafeSkill, compute a SHA-256 of the skill's zip content
+// and check the local cache. Matching content hash → skip submit+poll → return
+// cached result immediately. On a cache miss the full scan runs and the result
+// is persisted for the next lookup.
+
+const CACHE_DIR = 'storages/dsh-plugin-guard'
+const CACHE_FILE = 'safeskill-cache.json'
+
+function cacheDir(): string {
+  const home = process.env.DSH_HOME
+  if (home === undefined || home === '') return ''
+  return join(home, CACHE_DIR)
+}
+
+/** Compute a SHA-256 hex digest of the skill's zip content (same bytes submitted to SafeSkill). */
+export function computeSkillContentHash(skillName: string): string {
+  const root = skillsRoot()
+  if (root === '') return ''
+  const dir = join(root, skillName)
+  try {
+    if (!existsSync(dir)) return ''
+  } catch {
+    return ''
+  }
+  const files = collectSkillFiles(dir)
+  if (files.length === 0) return ''
+  return createHash('sha256').update(zipStored(files)).digest('hex')
+}
+
+/** Read the on-disk SafeSkill result cache, returning an empty object on any failure. */
+export function loadSafeSkillCache(): Record<string, SafeSkillCacheEntry> {
+  const dir = cacheDir()
+  if (dir === '') return {}
+  const file = join(dir, CACHE_FILE)
+  try {
+    if (!existsSync(file)) return {}
+    const raw = JSON.parse(readFileSync(file, 'utf-8'))
+    if (typeof raw !== 'object' || raw === null) return {}
+    return raw as Record<string, SafeSkillCacheEntry>
+  } catch {
+    return {}
+  }
+}
+
+/** Persist the SafeSkill result cache atomically. Silently swallows IO errors. */
+export function saveSafeSkillCache(cache: Record<string, SafeSkillCacheEntry>): void {
+  const dir = cacheDir()
+  if (dir === '') return
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, CACHE_FILE), JSON.stringify(cache, null, 2), 'utf-8')
+  } catch {
+    // best-effort cache — a miss means a re-scan next time
+  }
+}
+
+/**
+ * Cache-aware single-skill scan: checks the local content-hash cache first,
+ * falls back to a full SafeSkill submit+poll cycle on miss, and caches the
+ * result for future lookups.
+ */
+export async function scanSkillWithCache(
+  skillName: string,
+  apiKey: string,
+): Promise<{ report: SafeSkillReport; fromCache: boolean }> {
+  const contentHash = computeSkillContentHash(skillName)
+  if (contentHash !== '') {
+    const cache = loadSafeSkillCache()
+    const cached = cache[contentHash]
+    if (cached !== undefined) return { report: cached.report, fromCache: true }
+  }
+
+  const report = await runSafeSkillScan(skillName, apiKey)
+
+  if (contentHash !== '') {
+    const cache = loadSafeSkillCache()
+    cache[contentHash] = { contentHash, safeSkillSha256: report.sha256, report, cachedAt: Date.now(), skillName }
+    saveSafeSkillCache(cache)
+  }
+
+  return { report, fromCache: false }
+}
+
+/** Return every currently-cached scan result (for the panel snapshot restore RPC). */
+export function getCachedResults(): SkillScanResult[] {
+  const cache = loadSafeSkillCache()
+  return Object.values(cache).map(entry => ({
+    skillName: entry.skillName,
+    report: entry.report,
+    fromCache: true,
+    cachedAt: entry.cachedAt,
+    error: null,
+  }))
 }
