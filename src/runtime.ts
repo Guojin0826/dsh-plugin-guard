@@ -404,9 +404,14 @@ export class GuardRuntime extends TypertRemoteService {
 
   /** Pack one skill and submit it to SafeSkill for multi-engine detection (cache-aware). */
   @Remote
-  async scanSkill(skillName: string): Promise<SafeSkillReport> {
-    const { report } = await scanSkillWithCache(skillName, this.safeSkillKey)
-    return report
+  async scanSkill(skillName: string): Promise<SkillScanResult> {
+    try {
+      const { report, fromCache } = await scanSkillWithCache(skillName, this.safeSkillKey)
+      return { skillName, report, fromCache, cachedAt: fromCache ? Date.now() : null, error: null }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { skillName, report: null, fromCache: false, cachedAt: null, error: msg }
+    }
   }
 
   /** Return every cached SafeSkill scan result so the panel can restore after refresh. */

@@ -28,7 +28,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     getSafeSkillStatus: () => Promise<RemoteResult<SafeSkillStatus>>
     setSafeSkillKey: (key: string) => Promise<RemoteResult<SafeSkillStatus>>
     listSkills: () => Promise<RemoteResult<SkillEntry[]>>
-    scanSkill: (skillName: string) => Promise<RemoteResult<SafeSkillReport>>
+    scanSkill: (skillName: string) => Promise<RemoteResult<SkillScanResult>>
     getSafeSkillCacheSnapshot: () => Promise<RemoteResult<SkillScanResult[]>>
     scanAllSkills: () => Promise<RemoteResult<SkillScanResult[]>>
   }
@@ -42,7 +42,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'guard/getSafeSkillStatus': () => Promise<RemoteResult<SafeSkillStatus>>
     'guard/setSafeSkillKey': (key: string) => Promise<RemoteResult<SafeSkillStatus>>
     'guard/listSkills': () => Promise<RemoteResult<SkillEntry[]>>
-    'guard/scanSkill': (skillName: string) => Promise<RemoteResult<SafeSkillReport>>
+    'guard/scanSkill': (skillName: string) => Promise<RemoteResult<SkillScanResult>>
     'guard/getSafeSkillCacheSnapshot': () => Promise<RemoteResult<SkillScanResult[]>>
     'guard/scanAllSkills': () => Promise<RemoteResult<SkillScanResult[]>>
   }

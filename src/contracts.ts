@@ -734,8 +734,8 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     ],
     result: {
       mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SafeSkillReport',
-      schema: safeSkillReportSchema,
+      typeSymbol: 'dsh-plugin-guard#SkillScanResult',
+      schema: skillScanResultSchema,
     },
   },
   {

@@ -16,7 +16,7 @@ export interface SecuritySectionInjected {
   getSafeSkillStatus: () => Promise<SafeSkillStatus>
   setSafeSkillKey: (key: string) => Promise<SafeSkillStatus>
   listSkills: () => Promise<SkillEntry[]>
-  scanSkill: (skillName: string) => Promise<SafeSkillReport>
+  scanSkill: (skillName: string) => Promise<SkillScanResult>
   getSafeSkillCacheSnapshot: () => Promise<SkillScanResult[]>
   scanAllSkills: () => Promise<SkillScanResult[]>
 }
@@ -593,7 +593,7 @@ interface SkillSectionProps {
   getSafeSkillStatus: () => Promise<SafeSkillStatus>
   setSafeSkillKey: (key: string) => Promise<SafeSkillStatus>
   listSkills: () => Promise<SkillEntry[]>
-  scanSkill: (skillName: string) => Promise<SafeSkillReport>
+  scanSkill: (skillName: string) => Promise<SkillScanResult>
   getSafeSkillCacheSnapshot: () => Promise<SkillScanResult[]>
   scanAllSkills: () => Promise<SkillScanResult[]>
   t: (key: string) => string
@@ -694,8 +694,8 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
     if (getSkillState(name).loading) return
     setSkillState(name, { loading: true, report: null, error: null, fromCache: false })
     try {
-      const report = await scanSkill(name)
-      setSkillState(name, { loading: false, report, error: null, fromCache: false })
+      const result = await scanSkill(name)
+      setSkillState(name, { loading: false, report: result.report, error: result.error, fromCache: result.fromCache })
     } catch (cause) {
       setSkillState(name, { loading: false, report: null, error: cause instanceof Error ? cause.message : String(cause), fromCache: false })
     }

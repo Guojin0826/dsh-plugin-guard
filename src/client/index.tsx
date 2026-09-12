@@ -34,7 +34,7 @@ interface GuardFace {
   getSafeSkillStatus(): Promise<RemoteOutcome<SafeSkillStatus>>
   setSafeSkillKey(key: string): Promise<RemoteOutcome<SafeSkillStatus>>
   listSkills(): Promise<RemoteOutcome<SkillEntry[]>>
-  scanSkill(skillName: string): Promise<RemoteOutcome<SafeSkillReport>>
+  scanSkill(skillName: string): Promise<RemoteOutcome<SkillScanResult>>
   getSafeSkillCacheSnapshot(): Promise<RemoteOutcome<SkillScanResult[]>>
   scanAllSkills(): Promise<RemoteOutcome<SkillScanResult[]>>
 }
