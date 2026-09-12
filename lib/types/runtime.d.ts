@@ -5,7 +5,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SecurityReport } from './contracts.ts';
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry } from './contracts.ts';
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
     /** Profile name under `$DSH_HOME/profiles` to audit. */
@@ -21,6 +21,8 @@ export declare class GuardRuntime extends TypertRemoteService {
     private readonly progress;
     /** GitHub PAT in effect for reputation lookups (config first, then a persisted panel-set value). */
     private githubToken;
+    /** SafeSkill API key (panel-set only; there is no config default for the third-party upload opt-in). */
+    private safeSkillKey;
     constructor(ctx: Context, config: ResolvedConfig);
     /** Resolve the audited profile directory from `$DSH_HOME` (+ the configured profile name). */
     private profileDir;
@@ -29,6 +31,9 @@ export declare class GuardRuntime extends TypertRemoteService {
     private tokenFile;
     private loadPersistedToken;
     private persistToken;
+    private safeSkillKeyFile;
+    private loadSafeSkillKey;
+    private persistSafeSkillKey;
     /** Record an audit phase for one plugin, keeping the original start timestamp. */
     private track;
     /** File holding the previous scan's baseline, for version-diff alerting (best-effort, Host-local). */
@@ -63,4 +68,12 @@ export declare class GuardRuntime extends TypertRemoteService {
     getGithubTokenStatus(): Promise<GithubTokenStatus>;
     /** Store (or clear, with an empty string) the GitHub PAT used by `getAiAudit` reputation lookups. */
     setGithubToken(token: string): Promise<GithubTokenStatus>;
+    /** Masked state of the SafeSkill API key (never returns the key value itself). */
+    getSafeSkillStatus(): Promise<SafeSkillStatus>;
+    /** Store (or clear, with an empty string) the SafeSkill API key used by `scanSkill`. */
+    setSafeSkillKey(key: string): Promise<SafeSkillStatus>;
+    /** Enumerate locally installed DSH skills under the skills dir (`SKILL.md` per subfolder). */
+    listSkills(): Promise<SkillEntry[]>;
+    /** Pack one skill and submit it to SafeSkill for multi-engine detection. */
+    scanSkill(skillName: string): Promise<SafeSkillReport>;
 }

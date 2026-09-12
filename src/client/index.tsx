@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { GUARD_REMOTE } from './remote.ts'
 import { SecuritySection, type SecuritySectionInjected } from './SecurityReportPanel.tsx'
 import { NS, zh, en } from './locales.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SecurityReport } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry } from '../contracts.ts'
 
 /** Required services: the Remote face, the slot registry, and locale. */
 export const inject = ['remote', 'slots', 'locale']
@@ -31,6 +31,10 @@ interface GuardFace {
   setGithubToken(token: string): Promise<RemoteOutcome<GithubTokenStatus>>
   getAuditConfig(): Promise<RemoteOutcome<AuditCacheConfig>>
   setAuditTtl(ttlHours: number): Promise<RemoteOutcome<AuditCacheConfig>>
+  getSafeSkillStatus(): Promise<RemoteOutcome<SafeSkillStatus>>
+  setSafeSkillKey(key: string): Promise<RemoteOutcome<SafeSkillStatus>>
+  listSkills(): Promise<RemoteOutcome<SkillEntry[]>>
+  scanSkill(skillName: string): Promise<RemoteOutcome<SafeSkillReport>>
 }
 
 /** Compose the security-report surface. */
@@ -108,6 +112,30 @@ export function apply(ctx: ClientContext): void {
       setAuditTtl: async (ttlHours: number) => {
         if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
         const result = await guard.setAuditTtl(ttlHours)
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      getSafeSkillStatus: async () => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.getSafeSkillStatus()
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      setSafeSkillKey: async (key: string) => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.setSafeSkillKey(key)
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      listSkills: async () => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.listSkills()
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value
+      },
+      scanSkill: async (skillName: string) => {
+        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+        const result = await guard.scanSkill(skillName)
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         return result.value
       },

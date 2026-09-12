@@ -1,7 +1,7 @@
 /** Settings section rendering the plugin security audit report (green/yellow/red) plus per-plugin AI audit with live progress. */
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useReducer, useRef, useState, type ReactElement } from 'react'
-import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SecurityReport } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SafeSkillReport, SafeSkillStatus, SafeSkillThreat, SecurityReport, SkillEntry } from '../contracts.ts'
 
 export interface SecuritySectionInjected {
   getReport: () => Promise<SecurityReport>
@@ -13,6 +13,10 @@ export interface SecuritySectionInjected {
   setGithubToken: (token: string) => Promise<GithubTokenStatus>
   getAuditConfig: () => Promise<AuditCacheConfig>
   setAuditTtl: (ttlHours: number) => Promise<AuditCacheConfig>
+  getSafeSkillStatus: () => Promise<SafeSkillStatus>
+  setSafeSkillKey: (key: string) => Promise<SafeSkillStatus>
+  listSkills: () => Promise<SkillEntry[]>
+  scanSkill: (skillName: string) => Promise<SafeSkillReport>
 }
 
 type SecuritySectionProps = InjectFace<SecuritySectionInjected> & PropsLocale<'dsh-plugin-guard'>
@@ -43,7 +47,11 @@ function effRisk(staticRisk: PluginAudit['risk'], verdict: AiAuditResult['verdic
   }
 }
 
-const palette = {
+// Two palettes so the panel reads well in both the app's light and dark themes.
+// `palette` is a mutable object: the theme effect in SecuritySection reassigns
+// its fields, and every render reads the properties directly, so child
+// components always see the current theme's colors.
+const lightPalette = {
   red: '#d93025',
   redBg: '#fdebea',
   yellow: '#b27000',
@@ -52,10 +60,40 @@ const palette = {
   greenBg: '#e8f5ec',
   border: 'rgba(0,0,0,0.12)',
   mute: 'rgba(0,0,0,0.55)',
+  dim: '#444',
   busy: '#3b5b8c',
   busyBg: '#f0f4fb',
   busyBorder: '#d5e0f0',
+  surface: '#fff',
+  surfaceHi: 'rgba(0,0,0,0.05)',
 }
+
+const darkPalette: typeof lightPalette = {
+  red: '#ff8a80',
+  redBg: 'rgba(255,138,128,0.16)',
+  yellow: '#ffd54f',
+  yellowBg: 'rgba(255,213,79,0.16)',
+  green: '#69db7c',
+  greenBg: 'rgba(105,219,124,0.16)',
+  border: 'rgba(255,255,255,0.16)',
+  mute: 'rgba(255,255,255,0.55)',
+  dim: '#c1c5cb',
+  busy: '#8ab4f8',
+  busyBg: 'rgba(138,180,248,0.14)',
+  busyBorder: 'rgba(138,180,248,0.28)',
+  surface: '#26282b',
+  surfaceHi: 'rgba(255,255,255,0.07)',
+}
+
+/** Whether the app is currently in dark theme, read from the app's own `data-ds-dark-theme` body flag. */
+function isAppDark(): boolean {
+  if (typeof document === 'undefined' || document.body === null) return false
+  const flag = document.body.getAttribute('data-ds-dark-theme') ?? document.documentElement.getAttribute('data-ds-dark-theme')
+  if (flag === null) return false
+  return flag !== 'false' && flag !== '0' && flag !== 'off'
+}
+
+const palette = { ...(isAppDark() ? darkPalette : lightPalette) }
 
 function riskColor(risk: PluginAudit['risk']): string {
   return palette[risk]
@@ -65,7 +103,7 @@ function riskBg(risk: PluginAudit['risk']): string {
 }
 
 function FlagRow({ flag }: { flag: PluginAudit['flags'][number] }): ReactElement {
-  const sevColor = flag.severity === 'high' ? palette.red : flag.severity === 'medium' ? palette.yellow : '#444'
+  const sevColor = flag.severity === 'high' ? palette.red : flag.severity === 'medium' ? palette.yellow : palette.dim
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '4px 0' }}>
       <code style={{ fontSize: 12, color: sevColor, fontWeight: 600 }}>{flag.code}</code>
@@ -76,7 +114,7 @@ function FlagRow({ flag }: { flag: PluginAudit['flags'][number] }): ReactElement
 }
 
 function PermissionRow({ permission }: { permission: PluginAudit['permissions'][number] }): ReactElement {
-  const sevColor = permission.severity === 'high' ? palette.red : permission.severity === 'medium' ? palette.yellow : '#444'
+  const sevColor = permission.severity === 'high' ? palette.red : permission.severity === 'medium' ? palette.yellow : palette.dim
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '4px 0' }}>
       <code style={{ fontSize: 12, color: sevColor, fontWeight: 600 }}>{permission.name}</code>
@@ -110,6 +148,28 @@ function setAiState(pluginName: string, update: Partial<AiState>): void {
 function subscribeAi(listener: () => void): () => void {
   aiListeners.add(listener)
   return () => { aiListeners.delete(listener) }
+}
+
+type SkillState = {
+  loading: boolean
+  report: SafeSkillReport | null
+  error: string | null
+}
+
+/** Module-level store so a SafeSkill scan keeps running (and stays visible) across panel close, mirroring the AI store. */
+const skillStore = new Map<string, SkillState>()
+const skillListeners = new Set<() => void>()
+
+function getSkillState(skillName: string): SkillState {
+  return skillStore.get(skillName) ?? { loading: false, report: null, error: null }
+}
+function setSkillState(skillName: string, update: Partial<SkillState>): void {
+  skillStore.set(skillName, { ...getSkillState(skillName), ...update })
+  for (const listener of skillListeners) listener()
+}
+function subscribeSkill(listener: () => void): () => void {
+  skillListeners.add(listener)
+  return () => { skillListeners.delete(listener) }
 }
 
 /** Render an untrusted URL as a link only when its scheme is http(s); otherwise plain text. */
@@ -177,7 +237,7 @@ function AdvisoriesBox({ reputation, t }: { reputation: ReputationEvidence; t: (
       <ul style={{ margin: '4px 0 0', paddingLeft: 0, listStyle: 'none' }}>
         {advisories.map((advisory, index) => (
           <li key={index} style={{ margin: '4px 0' }}>
-            <span style={{ fontWeight: 600, color: advisory.malicious ? palette.red : '#444' }}>
+            <span style={{ fontWeight: 600, color: advisory.malicious ? palette.red : palette.dim }}>
               {advisory.malicious ? '⚠ ' : ''}{advisory.id}
             </span>
             {advisory.aliases.length > 0 && <span style={{ color: palette.mute, fontSize: 12 }}> ({advisory.aliases.join(', ')})</span>}
@@ -210,7 +270,7 @@ function DependencyAdvisoriesBox({ reputation, t }: { reputation: ReputationEvid
       <ul style={{ margin: '4px 0 0', paddingLeft: 0, listStyle: 'none' }}>
         {impacted.map((dep, index) => (
           <li key={index} style={{ margin: '4px 0' }}>
-            <span style={{ fontWeight: 600, color: '#444' }}>{dep.name}@{dep.version}</span>
+            <span style={{ fontWeight: 600, color: palette.dim }}>{dep.name}@{dep.version}</span>
             {dep.advisories.map((adv, j) => (
               <div key={j} style={{ fontSize: 12, color: adv.malicious ? palette.red : '#555', wordBreak: 'break-all' }}>
                 {adv.malicious ? '⚠ ' : ''}{adv.id}{adv.summary !== '' ? ` — ${adv.summary}` : ''}
@@ -473,7 +533,7 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
                 padding: '6px 12px',
                 borderRadius: 6,
                 border: `1px solid ${palette.border}`,
-                background: '#fff',
+                background: palette.surface,
                 cursor: aiState.loading ? 'default' : 'pointer',
                 fontSize: 13,
                 opacity: aiState.loading ? 0.6 : 1,
@@ -489,7 +549,7 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
                 padding: '6px 12px',
                 borderRadius: 6,
                 border: `1px solid ${palette.border}`,
-                background: '#fff',
+                background: palette.surface,
                 cursor: aiState.loading ? 'default' : 'pointer',
                 fontSize: 13,
                 opacity: aiState.loading ? 0.6 : 1,
@@ -505,7 +565,261 @@ function PluginRow({ plugin, t, aiState, onAudit, onForceAudit, delta }: {
   )
 }
 
-export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, t }: SecuritySectionProps): ReactElement {
+const THREAT_KEY = {
+  malicious: 'skillThreatMalicious',
+  suspicious: 'skillThreatSuspicious',
+  unknown: 'skillThreatUnknown',
+  clean: 'skillThreatClean',
+} as const
+
+function threatColor(threat: SafeSkillThreat): string {
+  if (threat === 'malicious') return palette.red
+  if (threat === 'suspicious') return palette.yellow
+  if (threat === 'clean') return palette.green
+  return palette.dim
+}
+
+function threatBg(threat: SafeSkillThreat): string {
+  if (threat === 'malicious') return palette.redBg
+  if (threat === 'suspicious') return palette.yellowBg
+  if (threat === 'clean') return palette.greenBg
+  return 'transparent'
+}
+
+interface SkillSectionProps {
+  getSafeSkillStatus: () => Promise<SafeSkillStatus>
+  setSafeSkillKey: (key: string) => Promise<SafeSkillStatus>
+  listSkills: () => Promise<SkillEntry[]>
+  scanSkill: (skillName: string) => Promise<SafeSkillReport>
+  t: (key: string) => string
+}
+
+/** Skill audit block: SafeSkill API-key opt-in + per-skill multi-engine scan. */
+function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, t }: SkillSectionProps): ReactElement {
+  const [, forceRender] = useReducer((n: number) => n + 1, 0)
+  const [skills, setSkills] = useState<SkillEntry[]>([])
+  const [skillsError, setSkillsError] = useState<string | null>(null)
+  const [configured, setConfigured] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [keyBusy, setKeyBusy] = useState(false)
+  const [keyError, setKeyError] = useState<string | null>(null)
+  const [keySaved, setKeySaved] = useState(false)
+
+  useEffect(() => subscribeSkill(forceRender), [])
+
+  const refreshSkills = async (): Promise<void> => {
+    setSkillsError(null)
+    try {
+      setSkills(await listSkills())
+    } catch (cause) {
+      setSkillsError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  useEffect(() => {
+    let disposed = false
+    void (async () => {
+      try {
+        const status = await getSafeSkillStatus()
+        if (disposed) return
+        setConfigured(status.configured)
+      } catch (cause) {
+        if (disposed) return
+        setKeyError(cause instanceof Error ? cause.message : String(cause))
+      }
+      await refreshSkills()
+    })()
+    return () => { disposed = true }
+  }, [getSafeSkillStatus, listSkills])
+
+  const saveKey = async (): Promise<void> => {
+    if (keyBusy) return
+    setKeyBusy(true)
+    setKeyError(null)
+    setKeySaved(false)
+    try {
+      const status = await setSafeSkillKey(draft)
+      setConfigured(status.configured)
+      if (status.configured) setDraft('')
+      setKeySaved(true)
+    } catch (cause) {
+      setKeyError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setKeyBusy(false)
+    }
+  }
+
+  const clearKey = async (): Promise<void> => {
+    if (keyBusy) return
+    setKeyBusy(true)
+    setKeyError(null)
+    try {
+      await setSafeSkillKey('')
+      setConfigured(false)
+      setDraft('')
+    } catch (cause) {
+      setKeyError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setKeyBusy(false)
+    }
+  }
+
+  const scan = async (name: string): Promise<void> => {
+    if (getSkillState(name).loading) return
+    setSkillState(name, { loading: true, report: null, error: null })
+    try {
+      const report = await scanSkill(name)
+      setSkillState(name, { loading: false, report, error: null })
+    } catch (cause) {
+      setSkillState(name, { loading: false, report: null, error: cause instanceof Error ? cause.message : String(cause) })
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 20, padding: '12px 14px', border: `1px solid ${palette.border}`, borderRadius: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{t('skillTitle')}</h3>
+        <button
+          type="button"
+          onClick={() => { void refreshSkills() }}
+          style={{
+            padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
+            cursor: 'pointer', fontSize: 13,
+          }}
+        >
+          {t('skillRefresh')}
+        </button>
+      </div>
+      <p style={{ fontSize: 12, color: palette.mute, margin: '6px 0 10px' }}>{t('skillDesc')}</p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>{t('skillKeyLabel')}</span>
+        <span style={{ fontSize: 12, color: configured ? palette.green : palette.mute, fontWeight: 600 }}>
+          {configured ? t('tokenConfigured') : t('tokenNotConfigured')}
+        </span>
+      </div>
+      <p style={{ fontSize: 12, color: palette.mute, margin: '4px 0 8px' }}>{t('skillKeyHint')}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          type="password"
+          value={draft}
+          onChange={event => setDraft(event.target.value)}
+          placeholder={t('skillKeyPlaceholder')}
+          autoComplete="off"
+          spellCheck={false}
+          style={{ flex: 1, minWidth: 220, padding: '6px 10px', borderRadius: 6, border: `1px solid ${palette.border}`, fontSize: 13 }}
+        />
+        <button
+          type="button"
+          disabled={keyBusy}
+          onClick={() => { void saveKey() }}
+          style={{
+            padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
+            cursor: keyBusy ? 'default' : 'pointer', fontSize: 13, opacity: keyBusy ? 0.6 : 1,
+          }}
+        >
+          {t('tokenSave')}
+        </button>
+        {configured && (
+          <button
+            type="button"
+            disabled={keyBusy}
+            onClick={() => { void clearKey() }}
+            style={{
+              padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
+              cursor: keyBusy ? 'default' : 'pointer', fontSize: 13, opacity: keyBusy ? 0.6 : 1,
+            }}
+          >
+            {t('tokenClear')}
+          </button>
+        )}
+      </div>
+      {keySaved && <div style={{ marginTop: 6, fontSize: 12, color: palette.green }}>{t('tokenSaved')}</div>}
+      {keyError !== null && <div style={{ marginTop: 6, fontSize: 12, color: palette.red }}>{keyError}</div>}
+      {!configured && <div style={{ marginTop: 10, fontSize: 12, color: palette.mute, fontStyle: 'italic' }}>{t('skillNoKey')}</div>}
+
+      <div style={{ marginTop: 10 }}>
+        {skillsError !== null
+          ? <div style={{ fontSize: 12, color: palette.red, marginTop: 8 }}>{skillsError}</div>
+          : skills.length === 0
+            ? <div style={{ marginTop: 8, fontSize: 13, color: palette.mute }}>{t('skillEmpty')}</div>
+            : skills.map(skill => {
+              const state = getSkillState(skill.name)
+              return (
+                <div key={skill.name} style={{ padding: '10px 0', borderTop: `1px solid ${palette.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <code style={{ fontWeight: 600, fontSize: 13 }}>{skill.name}</code>
+                    {skill.description !== '' && <span style={{ fontSize: 12, color: palette.mute }}>{skill.description}</span>}
+                    <button
+                      type="button"
+                      disabled={state.loading || !configured}
+                      onClick={() => { void scan(skill.name) }}
+                      style={{
+                        marginLeft: 'auto',
+                        padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
+                        cursor: (state.loading || !configured) ? 'default' : 'pointer', fontSize: 13, opacity: (state.loading || !configured) ? 0.6 : 1,
+                      }}
+                    >
+                      {t('skillScan')}
+                    </button>
+                  </div>
+                  {state.loading && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: palette.busyBg, border: `1px solid ${palette.busyBorder}`, fontSize: 12, color: palette.busy }}>
+                      {t('skillScanning')}
+                    </div>
+                  )}
+                  {state.error !== null && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: palette.redBg, color: palette.red, fontSize: 12 }}>
+                      {t('loadError')}: {state.error}
+                    </div>
+                  )}
+                  {state.report !== null && (
+                    <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 6, border: `1px solid ${threatColor(state.report.threatLevel)}`, background: threatBg(state.report.threatLevel) }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: threatColor(state.report.threatLevel) }}>
+                          {t('skillThreat')}: {t(THREAT_KEY[state.report.threatLevel])}
+                        </span>
+                        {state.report.trustScore >= 0 && <span style={{ fontSize: 12, fontWeight: 600 }}>{t('skillTrust')}: {state.report.trustScore}</span>}
+                        {state.report.threatClassify !== '' && <span style={{ fontSize: 12, color: palette.mute }}>{t('skillClassify')}: {state.report.threatClassify}</span>}
+                        {state.report.permalink !== '' && <SafeLink url={state.report.permalink} label={t('skillPermalink')} />}
+                      </div>
+                      {Object.keys(state.report.multiVerdict).length > 0 && (
+                        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12 }}>
+                          <span style={{ fontWeight: 600 }}>{t('skillMulti')}:</span>
+                          {Object.entries(state.report.multiVerdict).map(([engine, verdict]) => (
+                            <span key={engine} style={{ padding: '1px 6px', borderRadius: 8, background: palette.surfaceHi }}>{engine}: {verdict}</span>
+                          ))}
+                        </div>
+                      )}
+                      {state.report.indicators.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>{t('skillIndicators')}</div>
+                          <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                            {state.report.indicators.map((indicator, index) => (
+                              <li key={index} style={{ marginTop: 4 }}>
+                                <span style={{ fontWeight: 600 }}>{indicator.indicator}</span>
+                                {indicator.category !== '' && <span style={{ color: palette.mute }}> · {indicator.category}</span>}
+                                <span style={{ color: indicator.severity === 'high' ? palette.red : indicator.severity === 'medium' ? palette.yellow : palette.dim }}> [{indicator.severity}]</span>
+                                {indicator.evidence !== '' && <div style={{ fontSize: 12, color: palette.mute, whiteSpace: 'pre-wrap' }}>{indicator.evidence}</div>}
+                                {indicator.sources.length > 0 && (
+                                  <div style={{ fontSize: 11, color: palette.mute }}>{indicator.sources.map(source => (source.lines !== '' ? `${source.file}:${source.lines}` : source.file)).join(' · ')}</div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+      </div>
+    </div>
+  )
+}
+
+export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, t }: SecuritySectionProps): ReactElement {
   const [report, setReport] = useState<SecurityReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -533,6 +847,21 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
 
   // Stop the AI-audit progress poll if the section unmounts mid-audit.
   useEffect(() => () => { if (pollRef.current !== null) clearInterval(pollRef.current) }, [])
+
+  // Follow the app's light/dark theme live: repaint the palette and re-render on toggle.
+  useEffect(() => {
+    const apply = (): void => {
+      Object.assign(palette, isAppDark() ? darkPalette : lightPalette)
+      forceRender()
+    }
+    apply()
+    if (typeof document === 'undefined') return
+    const observer = new MutationObserver(apply)
+    const options = { attributes: true, attributeFilter: ['data-ds-dark-theme'] }
+    observer.observe(document.body, options)
+    observer.observe(document.documentElement, options)
+    return () => observer.disconnect()
+  }, [])
 
   // Load the masked token state once on mount.
   useEffect(() => {
@@ -698,7 +1027,7 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
             padding: '6px 12px',
             borderRadius: 6,
             border: `1px solid ${palette.border}`,
-            background: '#fff',
+            background: palette.surface,
             cursor: loading ? 'default' : 'pointer',
             fontSize: 13,
             opacity: loading ? 0.6 : 1,
@@ -733,7 +1062,7 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
             disabled={tokenBusy}
             onClick={() => { void saveToken() }}
             style={{
-              padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: '#fff',
+              padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
               cursor: tokenBusy ? 'default' : 'pointer', fontSize: 13, opacity: tokenBusy ? 0.6 : 1,
             }}
           >
@@ -745,7 +1074,7 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
               disabled={tokenBusy}
               onClick={() => { void clearToken() }}
               style={{
-                padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: '#fff',
+                padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
                 cursor: tokenBusy ? 'default' : 'pointer', fontSize: 13, opacity: tokenBusy ? 0.6 : 1,
               }}
             >
@@ -777,7 +1106,7 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
             disabled={ttlBusy}
             onClick={() => { void saveTtl() }}
             style={{
-              padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: '#fff',
+              padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
               cursor: ttlBusy ? 'default' : 'pointer', fontSize: 13, opacity: ttlBusy ? 0.6 : 1,
             }}
           >
@@ -826,6 +1155,14 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
               ))}
           </div>
         )}
+
+      <SkillSection
+        getSafeSkillStatus={getSafeSkillStatus}
+        setSafeSkillKey={setSafeSkillKey}
+        listSkills={listSkills}
+        scanSkill={scanSkill}
+        t={t}
+      />
     </section>
   )
 }

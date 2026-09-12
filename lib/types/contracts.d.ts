@@ -581,5 +581,95 @@ export interface AuditCacheConfig {
 export declare const auditCacheConfigSchema: z.ZodReadonly<z.ZodObject<{
     ttlHours: z.ZodNumber;
 }, z.core.$strip>>;
+/** SafeSkill threat level, normalized from the API's `summary.threat_level`. */
+export type SafeSkillThreat = 'malicious' | 'suspicious' | 'unknown' | 'clean';
+/** One risk indicator surfaced by SafeSkill's multi-engine analysis. */
+export interface SafeSkillIndicator {
+    readonly indicator: string;
+    readonly category: string;
+    readonly severity: Severity;
+    readonly evidence: string;
+    readonly sources: readonly {
+        file: string;
+        lines: string;
+    }[];
+}
+/** Normalized single-skill SafeSkill verdict returned by `guard.scanSkill`. */
+export interface SafeSkillReport {
+    readonly skillName: string;
+    readonly sha256: string;
+    readonly threatLevel: SafeSkillThreat;
+    /** Malware family / classification label, e.g. `Trojan`; empty when none. */
+    readonly threatClassify: string;
+    /** 0–100 trust score; -1 when the API did not return one. */
+    readonly trustScore: number;
+    readonly multiVerdict: Record<string, string>;
+    readonly indicators: SafeSkillIndicator[];
+    readonly permalink: string;
+}
+/** Masked SafeSkill API-key state (the key itself is never returned). */
+export interface SafeSkillStatus {
+    readonly configured: boolean;
+}
+/** One locally installed DSH skill discovered under `$DSH_HOME/skills`. */
+export interface SkillEntry {
+    readonly name: string;
+    readonly description: string;
+}
+export declare const safeSkillThreatSchema: z.ZodEnum<{
+    unknown: "unknown";
+    suspicious: "suspicious";
+    malicious: "malicious";
+    clean: "clean";
+}>;
+export declare const safeSkillIndicatorSchema: z.ZodReadonly<z.ZodObject<{
+    indicator: z.ZodString;
+    category: z.ZodString;
+    severity: z.ZodEnum<{
+        high: "high";
+        medium: "medium";
+        low: "low";
+    }>;
+    evidence: z.ZodString;
+    sources: z.ZodArray<z.ZodObject<{
+        file: z.ZodString;
+        lines: z.ZodString;
+    }, z.core.$strip>>;
+}, z.core.$strip>>;
+export declare const safeSkillReportSchema: z.ZodReadonly<z.ZodObject<{
+    skillName: z.ZodString;
+    sha256: z.ZodString;
+    threatLevel: z.ZodEnum<{
+        unknown: "unknown";
+        suspicious: "suspicious";
+        malicious: "malicious";
+        clean: "clean";
+    }>;
+    threatClassify: z.ZodString;
+    trustScore: z.ZodNumber;
+    multiVerdict: z.ZodRecord<z.ZodString, z.ZodString>;
+    indicators: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        indicator: z.ZodString;
+        category: z.ZodString;
+        severity: z.ZodEnum<{
+            high: "high";
+            medium: "medium";
+            low: "low";
+        }>;
+        evidence: z.ZodString;
+        sources: z.ZodArray<z.ZodObject<{
+            file: z.ZodString;
+            lines: z.ZodString;
+        }, z.core.$strip>>;
+    }, z.core.$strip>>>;
+    permalink: z.ZodString;
+}, z.core.$strip>>;
+export declare const safeSkillStatusSchema: z.ZodReadonly<z.ZodObject<{
+    configured: z.ZodBoolean;
+}, z.core.$strip>>;
+export declare const skillEntrySchema: z.ZodReadonly<z.ZodObject<{
+    name: z.ZodString;
+    description: z.ZodString;
+}, z.core.$strip>>;
 /** The plugin-guard Remote namespace's strict invocation descriptors. */
 export declare const GUARD_INVOCATIONS: readonly InvocationDescriptor[];

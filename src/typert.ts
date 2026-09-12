@@ -68,6 +68,26 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'setAuditTtl',
             signature: 'setAuditTtl(ttlHours: number): Promise<AuditCacheConfig>',
           },
+          {
+            kind: 'method',
+            name: 'getSafeSkillStatus',
+            signature: 'getSafeSkillStatus(): Promise<SafeSkillStatus>',
+          },
+          {
+            kind: 'method',
+            name: 'setSafeSkillKey',
+            signature: 'setSafeSkillKey(key: string): Promise<SafeSkillStatus>',
+          },
+          {
+            kind: 'method',
+            name: 'listSkills',
+            signature: 'listSkills(): Promise<SkillEntry[]>',
+          },
+          {
+            kind: 'method',
+            name: 'scanSkill',
+            signature: 'scanSkill(skillName: string): Promise<SafeSkillReport>',
+          },
         ],
         types: [],
       },

@@ -9,7 +9,8 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:
 import { join } from 'node:path'
 import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SecurityReport } from './contracts.ts'
+import { listLocalSkills, runSafeSkillScan } from './safeskill.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry } from './contracts.ts'
 
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
@@ -44,6 +45,9 @@ export class GuardRuntime extends TypertRemoteService {
   /** GitHub PAT in effect for reputation lookups (config first, then a persisted panel-set value). */
   private githubToken: string
 
+  /** SafeSkill API key (panel-set only; there is no config default for the third-party upload opt-in). */
+  private safeSkillKey: string
+
   constructor(
     ctx: Context,
     private readonly config: ResolvedConfig,
@@ -51,6 +55,7 @@ export class GuardRuntime extends TypertRemoteService {
     super(ctx, 'guard')
     this.githubToken = config.githubToken.trim()
     if (this.githubToken === '') this.githubToken = this.loadPersistedToken()
+    this.safeSkillKey = this.loadSafeSkillKey()
   }
 
   /** Resolve the audited profile directory from `$DSH_HOME` (+ the configured profile name). */
@@ -100,6 +105,39 @@ export class GuardRuntime extends TypertRemoteService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.warn(`[plugin-guard] 无法持久化 GitHub token: ${message}`)
+    }
+  }
+
+  private safeSkillKeyFile(): string {
+    const dir = this.tokenDir()
+    return dir === '' ? '' : join(dir, 'safeskill-key.txt')
+  }
+
+  private loadSafeSkillKey(): string {
+    const file = this.safeSkillKeyFile()
+    if (file === '') return ''
+    try {
+      return readFileSync(file, 'utf-8').trim()
+    } catch {
+      return ''
+    }
+  }
+
+  private persistSafeSkillKey(key: string): void {
+    const file = this.safeSkillKeyFile()
+    if (file === '') return
+    try {
+      if (key === '') {
+        rmSync(file, { force: true })
+        return
+      }
+      // Host-local secret, same 0700/0600 policy as the GitHub token above.
+      mkdirSync(this.tokenDir(), { recursive: true, mode: 0o700 })
+      writeFileSync(file, key, 'utf-8')
+      chmodSync(file, 0o600)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[plugin-guard] 无法持久化 SafeSkill API key: ${message}`)
     }
   }
 
@@ -341,5 +379,32 @@ export class GuardRuntime extends TypertRemoteService {
     this.githubToken = next
     this.persistToken(next)
     return { configured: next !== '' }
+  }
+
+  /** Masked state of the SafeSkill API key (never returns the key value itself). */
+  @Remote
+  async getSafeSkillStatus(): Promise<SafeSkillStatus> {
+    return { configured: this.safeSkillKey !== '' }
+  }
+
+  /** Store (or clear, with an empty string) the SafeSkill API key used by `scanSkill`. */
+  @Remote
+  async setSafeSkillKey(key: string): Promise<SafeSkillStatus> {
+    const next = (typeof key === 'string' ? key : '').trim()
+    this.safeSkillKey = next
+    this.persistSafeSkillKey(next)
+    return { configured: next !== '' }
+  }
+
+  /** Enumerate locally installed DSH skills under the skills dir (`SKILL.md` per subfolder). */
+  @Remote
+  async listSkills(): Promise<SkillEntry[]> {
+    return listLocalSkills()
+  }
+
+  /** Pack one skill and submit it to SafeSkill for multi-engine detection. */
+  @Remote
+  async scanSkill(skillName: string): Promise<SafeSkillReport> {
+    return runSafeSkillScan(skillName, this.safeSkillKey)
   }
 }

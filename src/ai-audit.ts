@@ -388,7 +388,7 @@ async function runLlmText(guardCtx: GuardContext, options: LlmCallOptions): Prom
 async function fetchJson(url: string, timeoutMs: number, headers?: Record<string, string>): Promise<unknown> {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(timeoutMs),
-    headers: { accept: 'application/json', 'user-agent': 'dsh-plugin-guard/0.1.0 (security audit)', ...(headers ?? {}) },
+    headers: { accept: 'application/json', 'user-agent': 'dsh-plugin-guard/0.3.0 (security audit)', ...(headers ?? {}) },
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return response.json()
@@ -750,7 +750,7 @@ async function lookupOsvAdvisories(pluginName: string): Promise<AdvisoryFinding[
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
-        'user-agent': 'dsh-plugin-guard/0.1.0 (security audit)',
+        'user-agent': 'dsh-plugin-guard/0.3.0 (security audit)',
       },
       body: JSON.stringify({ package: { name: pluginName, ecosystem: 'npm' } }),
     })
@@ -773,7 +773,7 @@ async function lookupOsvAdvisoriesBatch(deps: Array<{ name: string; version: str
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
-        'user-agent': 'dsh-plugin-guard/0.1.0 (security audit)',
+        'user-agent': 'dsh-plugin-guard/0.3.0 (security audit)',
       },
       body: JSON.stringify({ queries: deps.map(dep => ({ package: { name: dep.name, ecosystem: 'npm' }, version: dep.version })) }),
     })

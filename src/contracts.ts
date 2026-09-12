@@ -389,6 +389,73 @@ export const auditCacheConfigSchema = z.object({
   ttlHours: z.number().min(0),
 }).readonly()
 
+/** SafeSkill threat level, normalized from the API's `summary.threat_level`. */
+export type SafeSkillThreat = 'malicious' | 'suspicious' | 'unknown' | 'clean'
+
+/** One risk indicator surfaced by SafeSkill's multi-engine analysis. */
+export interface SafeSkillIndicator {
+  readonly indicator: string
+  readonly category: string
+  readonly severity: Severity
+  readonly evidence: string
+  readonly sources: readonly { file: string; lines: string }[]
+}
+
+/** Normalized single-skill SafeSkill verdict returned by `guard.scanSkill`. */
+export interface SafeSkillReport {
+  readonly skillName: string
+  readonly sha256: string
+  readonly threatLevel: SafeSkillThreat
+  /** Malware family / classification label, e.g. `Trojan`; empty when none. */
+  readonly threatClassify: string
+  /** 0–100 trust score; -1 when the API did not return one. */
+  readonly trustScore: number
+  readonly multiVerdict: Record<string, string>
+  readonly indicators: SafeSkillIndicator[]
+  readonly permalink: string
+}
+
+/** Masked SafeSkill API-key state (the key itself is never returned). */
+export interface SafeSkillStatus {
+  readonly configured: boolean
+}
+
+/** One locally installed DSH skill discovered under `$DSH_HOME/skills`. */
+export interface SkillEntry {
+  readonly name: string
+  readonly description: string
+}
+
+export const safeSkillThreatSchema = z.enum(['malicious', 'suspicious', 'unknown', 'clean'])
+
+export const safeSkillIndicatorSchema = z.object({
+  indicator: z.string().min(1),
+  category: z.string(),
+  severity: severitySchema,
+  evidence: z.string(),
+  sources: z.array(z.object({ file: z.string(), lines: z.string() })),
+}).readonly()
+
+export const safeSkillReportSchema = z.object({
+  skillName: z.string().min(1),
+  sha256: z.string(),
+  threatLevel: safeSkillThreatSchema,
+  threatClassify: z.string(),
+  trustScore: z.number().int().min(-1).max(100),
+  multiVerdict: z.record(z.string(), z.string()),
+  indicators: z.array(safeSkillIndicatorSchema),
+  permalink: z.string(),
+}).readonly()
+
+export const safeSkillStatusSchema = z.object({
+  configured: z.boolean(),
+}).readonly()
+
+export const skillEntrySchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+}).readonly()
+
 /** The plugin-guard Remote namespace's strict invocation descriptors. */
 export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
   {
@@ -561,6 +628,80 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
       mode: 'strict',
       typeSymbol: 'dsh-plugin-guard#AiAuditResult[]',
       schema: z.array(aiAuditResultSchema),
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/getSafeSkillStatus',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'getSafeSkillStatus',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SafeSkillStatus',
+      schema: safeSkillStatusSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/setSafeSkillKey',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'setSafeSkillKey',
+    invocation: { kind: 'direct' },
+    parameters: [
+      {
+        name: 'key',
+        wire: 'key',
+        source: 'json',
+        codec: {
+          mode: 'strict',
+          typeSymbol: 'dsh-plugin-guard#guard/setSafeSkillKey:key',
+          schema: z.string(),
+        },
+      },
+    ],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SafeSkillStatus',
+      schema: safeSkillStatusSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/listSkills',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'listSkills',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SkillEntry[]',
+      schema: z.array(skillEntrySchema),
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/scanSkill',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'scanSkill',
+    invocation: { kind: 'direct' },
+    parameters: [
+      {
+        name: 'skillName',
+        wire: 'skillName',
+        source: 'json',
+        codec: {
+          mode: 'strict',
+          typeSymbol: 'dsh-plugin-guard#guard/scanSkill:skillName',
+          schema: z.string().min(1),
+        },
+      },
+    ],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SafeSkillReport',
+      schema: safeSkillReportSchema,
     },
   },
 ]
