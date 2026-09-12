@@ -28,6 +28,8 @@
   - **GitHub 仓库信号**：star / fork / 是否归档 / 作者账号年龄 / 公开仓库数 / **开源许可（SPDX）** / **开放 issue 数** / **有无 SECURITY.md**，并据 `pushed_at` 判断**是否已弃坑（超 1 年无提交标红）**。仓库地址**优先取自插件自述**（package.json 的 `repository` / `homepage`、README 文档）；只有插件完全没声明时，才按包名从 npm 推断，并明确标注「可能是同名仓库，请人工核对」。
   - **依赖漏洞扫描（OSV.dev 批量）**：每次审计会解析插件**直接运行依赖**（从自身 `node_modules` 读到精确安装版本，pnpm 符号链接照追、并与声明的 `dependencies` / `optionalDependencies` / `peerDependencies` 交叉过滤），单次批量查询 OSV.dev `/v1/querybatch` 是否有已知 CVE / 恶意记录；命中依赖会在声誉面板列出，且**新出现的依赖漏洞信号同样会使缓存判定失效**。全程无 key、尽力而为、不阻断审计。
 - **GitHub Token**：可在面板中填写 Personal Access Token，把 GitHub API 限额从 60 次/小时提升到 5000 次/小时。
+- **技能审计（SafeSkill）**：对接微步在线 SafeSkill 平台，在面板中填写 API Key 后可对该 profile 已安装的 DSH Skills 一键上传扫描（客户端自动 zip 打包，零新依赖）并拉取多引擎（LLM / 静态 / 动态 / 子文件 / 外链）判定报告，含威胁等级、信任分、威胁分类与详细风险指标；结果内联展示并附报告原文链接。
+- **浅色 / 暗色主题适配**：报告面板自动检测应用的浅色 / 暗色主题并跟随切换，所有文字、徽章、控件在两套主题下均可读，无需刷新页面。
 
 ## 安装与启用
 
@@ -86,6 +88,15 @@ dsh plugin --profile <name> add @guojin-ai/dsh-plugin-guard
 - **保存 / 清除**：填写后保存，状态显示「已配置 / 未配置」；
 - 填写 Token 后，AI 审计的 GitHub 查询限额从 60 次/小时提升到 5000 次/小时；
 - Token 只保存在本机（`$DSH_HOME/storages/dsh-plugin-guard/github-token.txt`），不进会话、不上传。
+
+### SafeSkill 技能审计（可选）
+
+本插件集成了**微步在线 SafeSkill 平台**（https://safeskill.cn），可对当前 profile 中已安装的 DSH Skills 做在线多引擎安全扫描。
+
+- **配置 API Key**：在面板顶部的「SafeSkill API Key」输入框中填写你在 SafeSkill 平台申请的 API Key（密码框，不回显），点击保存。Key 只保存在本机（`$DSH_HOME/storages/dsh-plugin-guard/safeskill-key.txt`，权限 0600），不进会话、不上传。
+- **扫描技能**：点击「扫描全部技能」或单个技能旁的扫描按钮，插件会读取该技能目录（`$DSH_HOME/skills/<name>/SKILL.md` 及其附带的支持文件），在客户端完成 CRC32 校验 + 标准 zip 打包（零额外依赖），上传至 SafeSkill 平台，然后轮询拉取报告（最长 5 分钟）。
+- **查看结果**：扫描完成后，面板展示威胁等级（恶意 / 可疑 / 未知 / 安全）、信任分（0–100）、威胁分类以及各引擎（LLM / 静态 / 动态 / 子文件 / 外链）的判定概要；点击链接可跳转 SafeSkill 报告原文。
+- **注意**：SafeSkill 是独立的外部平台，扫描结果由微步在线提供；本插件仅负责打包上传与结果回显，不做任何本地判定。未配置 API Key 时该区域不发起任何请求。
 
 ## 它会检查什么
 
@@ -155,6 +166,10 @@ AI 审计的判定口径：**危险能力本身不等于恶意**。它更看重�
 **问：绿色就一定安全、红色就一定是恶意吗？**
 
 不是。这是**事后检测** + 静态分析的组合，会有误报和漏报。请结合 AI 结论与人工复核后再做决定。
+
+**问：SafeSkill 扫描和 AI 审计有什么区别？**
+
+SafeSkill 是微步在线的外部多引擎扫描平台，提供独立第三方判定——偏重「这个技能文件是否已知恶意 / 可疑」。AI 审计是本插件调用 DSH 默认模型的内部审计，偏重「插件代码 + 安装链 + 声誉」的综合判断。两者互不依赖、可同时使用。
 
 ## 局限与免责
 

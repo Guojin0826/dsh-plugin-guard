@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-12
+
 ### Added
 
+- **SafeSkill skill audit (SafeSkill 技能审计)**: integrates the ThreatBook SafeSkill
+  online scanning platform. Users can enter a SafeSkill API Key in the settings panel and
+  then one-click upload an installed DSH Skill (auto-packaged as a stored zip with zero new
+  dependencies) and poll the multi-engine report (LLM / static / dynamic / sub-files /
+  external-URL verdicts). The report includes threat level, trust score, threat
+  classification, and detailed risk indicators, displayed inline with a permalink to the
+  full SafeSkill report.
 - **Declared host-service permission scoring**: the static audit now reads each
   plugin's declared `inject` services (`dsh.plugin.json` `entry.inject` and
   `package.json` `dsh.client.inject`), tiers each one (model / network / file /
@@ -99,6 +108,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dark / light theme-aware report panel**: the security panel now detects the app's
+  light/dark theme via `body[data-ds-dark-theme]` and renders with a self-contained
+  two-palette system, so all text, badges, and controls remain readable under either
+  theme. The palette switches live with a MutationObserver — no page refresh needed.
 - Refreshing the page no longer flushes the AI verdict/score/badges: a new offline
   `getAiAuditCacheSnapshot` RPC restores every still-valid cached result
   (fingerprint + TTL matched) on mount, so the classification, score, and expanded

@@ -26,6 +26,15 @@
   - **GitHub repo signals**: stars, forks, archived status, author account age, public repo count, **open-source license (SPDX)**, **open issue count**, **presence of a SECURITY.md**, and an **abandoned** flag (red) when the last commit (`pushed_at`) is over a year old. The repo URL is taken **first from the plugin's own declaration** (package.json `repository` / `homepage`, README/docs); only when the plugin states none is it inferred from npm by package name, clearly flagged as "possibly a same-named repo — verify manually".
   - **Dependency vulnerability scan (OSV.dev batch)**: each audit resolves the plugin's **direct runtime dependencies** (exact installed versions from its own `node_modules`, symlinks followed, cross-filtered against declared `dependencies` / `optionalDependencies` / `peerDependencies`) and batch-queries OSV.dev's `/v1/querybatch` for known CVEs / malicious records; impacted dependencies are listed in the reputation panel, and a **newly appearing dependency advisory also invalidates the cached verdict**. Keyless, best-effort, never blocking.
 - **GitHub Token**: optionally enter a Personal Access Token in the panel to raise the GitHub API limit from 60 to 5000 requests/hour.
+- **SafeSkill skill audit (SafeSkill 技能审计)**: integrates the ThreatBook SafeSkill platform.
+  Enter a SafeSkill API Key in the panel, then one-click upload installed DSH Skills
+  (auto-packaged as a stored zip, zero new dependencies) and poll a multi-engine report
+  (LLM / static / dynamic / sub-files / external-URL verdicts) showing threat level, trust
+  score, threat classification, and detailed risk indicators inline, with a link to the
+  full report.
+- **Light / dark theme support**: the report panel auto-detects the app's theme and
+  switches, so all text, badges, and controls remain readable under either theme without a
+  page refresh.
 
 ## Install & enable
 
@@ -84,6 +93,27 @@ The top of the panel provides a password-style Token field (never echoed back):
 - **Save / Clear**: save a token to show a "configured" state, or clear it.
 - With a token, the AI audit's GitHub lookups go from 60 to 5000 requests/hour.
 - The token is stored only on this machine (`$DSH_HOME/storages/dsh-plugin-guard/github-token.txt`) — it never enters the session or the UI.
+
+### SafeSkill skill audit (optional)
+
+This plugin integrates the **ThreatBook SafeSkill platform** (https://safeskill.cn) to
+perform online multi-engine security scanning of installed DSH Skills in the current profile.
+
+- **Set up the API Key**: enter your SafeSkill API Key in the "SafeSkill API Key" field at
+  the top of the panel (password-style, never echoed back) and click Save. The key is stored
+  only on this machine (`$DSH_HOME/storages/dsh-plugin-guard/safeskill-key.txt`, mode 0600)
+  — it never enters the session or the UI.
+- **Scan a skill**: click "Scan All Skills" or the scan button next to an individual skill.
+  The plugin reads the skill directory (`$DSH_HOME/skills/<name>/SKILL.md` and any
+  supporting files), performs CRC32 hashing and standard-zip packaging on the client (zero
+  extra dependencies), uploads to SafeSkill, then polls for the report (up to 5 minutes).
+- **Read the results**: when complete the panel shows the threat level (malicious /
+  suspicious / unknown / safe), trust score (0–100), threat classification, and per-engine
+  verdicts (LLM / static / dynamic / sub-files / external URLs); click the permalink to open
+  the full report on SafeSkill.
+- **Note**: SafeSkill is an independent external platform; scan results are provided by
+  ThreatBook. This plugin only handles packaging, upload, and result display — it performs
+  no local judgments. No requests are made before an API Key is configured.
 
 ## What it checks
 
@@ -153,6 +183,14 @@ No. Plugins installed via local `link:` / `file:` / direct GitHub, or packages n
 **Q: Does green mean safe and red mean malicious?**
 
 No. This is a detective-control plus static-analysis combination, so it can over- or under-report. Always combine the AI verdict with your own review before deciding.
+
+**Q: What's the difference between SafeSkill scanning and the AI audit?**
+
+SafeSkill is an external multi-engine scanning platform from ThreatBook that provides an
+independent third-party verdict — it answers "is this skill file known to be
+malicious / suspicious." The AI audit is the plugin's own internal audit using the DSH
+default model — it answers "what's the overall risk of this plugin, considering its code,
+supply chain, and reputation." The two are independent and can be used at the same time.
 
 ## Limitations & disclaimer
 
