@@ -425,6 +425,8 @@ export class GuardRuntime extends TypertRemoteService {
       try {
         const { report, fromCache } = await scanSkillWithCache(skill.name, this.safeSkillKey)
         results.push({ skillName: skill.name, report, fromCache, cachedAt: fromCache ? Date.now() : null, error: null })
+        // Throttle between non-cached scans to avoid SafeSkill rate limiting.
+        if (!fromCache) await new Promise<void>(resolve => setTimeout(resolve, 3_000))
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         results.push({ skillName: skill.name, report: null, fromCache: false, cachedAt: null, error: msg })

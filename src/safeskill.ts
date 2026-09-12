@@ -201,7 +201,9 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
 
 function safeSkillError(code: number | undefined, verboseMsg: string | undefined): string {
   const msg = verboseMsg !== undefined && verboseMsg !== '' ? verboseMsg : '未知错误'
-  return `SafeSkill 请求失败（code=${String(code ?? '?')}）：${msg}`
+  const base = `SafeSkill 请求失败（code=${String(code ?? '?')}）：${msg}`
+  if (code === -4) return `${base} — 今日扫描次数已达上限，请稍后再试或升级 API 套餐`
+  return base
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
