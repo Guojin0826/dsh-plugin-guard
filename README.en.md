@@ -10,7 +10,7 @@
 
 ## Features
 
-- **Static scanning**: a file-by-file inspection of third-party plugin source that flags 15 categories of dangerous capability (child processes, `eval`, `vm`, shell, file read/write, network, environment variables, system probing, obfuscation, suspicious exfiltration URLs, high-entropy payloads, credential-exfiltration patterns, and more), scored by severity.
+- **Static scanning**: a file-by-file inspection of third-party plugin source that flags 17 categories of dangerous capability (child processes, `eval`, `vm`, shell, file read/write, network, environment variables, system probing, obfuscation, suspicious exfiltration URLs, high-entropy payloads, credential-exfiltration patterns, hardcoded secrets, download-then-execute chains, and more), scored by severity.
 - **Dependency review**: flags dependencies that come from outside the npm registry (`git:` / `file:` / `link:` / URL) and packages whose names hit suspicious keywords.
 - **Install-script review**: calls out `preinstall` / `install` / `postinstall` scripts — a common supply-chain attack surface; a download-and-execute chain (curl/wget piped to a shell) inside an install script is flagged separately.
 - **Secret / download-execute scan**: two new high-severity static rules — "suspected hardcoded secret/token" (known formats: AWS / GitHub / Slack / Stripe / OpenAI / PRIVATE KEY, plus a generic long quoted key assignment) and "download-and-execute" (`curl`/`wget`/`iwr` piped to `sh`/`bash`/`iex`), checked across source and install scripts.
@@ -136,6 +136,8 @@ perform online multi-engine security scanning of installed DSH Skills in the cur
 | `system-info` | Low | hostname / user / CPU / NIC and other system probing |
 | `obfuscation` | Low | `atob` / base64 and other obfuscation hints |
 | `install-script` | High | a `package.json` declaring install scripts |
+| `hardcoded-secret` | High | suspected hardcoded credentials / tokens (AWS / GitHub / Slack / Stripe / OpenAI / PRIVATE KEY, etc.) |
+| `download-exec` | High | `curl` / `wget` / `iwr` piped to `sh` / `bash` / `iex` (download-and-execute) |
 
 ### Dependency review
 

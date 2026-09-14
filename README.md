@@ -12,7 +12,7 @@
 
 ## 主要功能
 
-- **静态扫描**：逐文件检查第三方插件源码，识别 15 类危险能力（子进程、`eval`、`vm`、shell、文件读写、网络、环境变量、系统探测、混淆、可疑外联地址、高熵载荷、凭据外传迹象等），并按严重度打分。
+- **静态扫描**：逐文件检查第三方插件源码，识别 17 类危险能力（子进程、`eval`、`vm`、shell、文件读写、网络、环境变量、系统探测、混淆、可疑外联地址、高熵载荷、凭据外传、硬编码密钥、下载即执行等），并按严重度打分。
 - **依赖审查**：标出「非 npm registry 来源」（`git:` / `file:` / `link:` / URL）以及「包名命中可疑关键词」的依赖。
 - **安装脚本审查**：单独标出 `preinstall` / `install` / `postinstall` 脚本——这是常见的供应链攻击面；安装脚本里若出现「下载即执行」（curl/wget 管道给 shell）会被单独再标一次。
 - **密钥 / 下载执行扫描**：新增两条高危静态规则——「疑似硬编码密钥 / 令牌」（AWS / GitHub / Slack / Stripe / OpenAI / PRIVATE KEY 等已知格式，加通用的长引号 key 赋值）与「下载即执行」（`curl`/`wget`/`iwr` 管道给 `sh`/`bash`/`iex`），源码与安装脚本都查。
@@ -119,6 +119,8 @@ dsh plugin --profile <name> add @guojin-ai/dsh-plugin-guard
 | `system-info` | 低 | 主机名 / 用户 / CPU / 网卡等系统探测 |
 | `obfuscation` | 低 | `atob` / base64 编码等混淆迹象 |
 | `install-script` | 高 | package.json 声明安装脚本 |
+| `hardcoded-secret` | 高 | 疑似硬编码密钥 / 令牌（AWS / GitHub / Slack / Stripe / OpenAI / PRIVATE KEY 等） |
+| `download-exec` | 高 | `curl` / `wget` / `iwr` 管道给 `sh` / `bash` / `iex` 的下载即执行 |
 
 ### 依赖审查
 
