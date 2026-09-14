@@ -5,7 +5,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts';
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts';
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
     /** Profile name under `$DSH_HOME/profiles` to audit. */
@@ -75,7 +75,7 @@ export declare class GuardRuntime extends TypertRemoteService {
     /** Enumerate locally installed DSH skills under the skills dir (`SKILL.md` per subfolder). */
     listSkills(): Promise<SkillEntry[]>;
     /** Pack one skill and submit it to SafeSkill for multi-engine detection (cache-aware). */
-    scanSkill(skillName: string): Promise<SafeSkillReport>;
+    scanSkill(skillName: string): Promise<SkillScanResult>;
     /** Return every cached SafeSkill scan result so the panel can restore after refresh. */
     getSafeSkillCacheSnapshot(): Promise<SkillScanResult[]>;
     /** Serial scan of every locally installed skill (cache-aware per skill, errors caught individually). */

@@ -9,8 +9,8 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:
 import { join } from 'node:path'
 import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
-import { getCachedResults, listLocalSkills, runSafeSkillScan, scanSkillWithCache } from './safeskill.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts'
+import { getCachedResults, listLocalSkills, scanSkillWithCache } from './safeskill.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts'
 
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {

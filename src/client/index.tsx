@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { GUARD_REMOTE } from './remote.ts'
 import { SecuritySection, type SecuritySectionInjected } from './SecurityReportPanel.tsx'
 import { NS, zh, en } from './locales.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillReport, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts'
 
 /** Required services: the Remote face, the slot registry, and locale. */
 export const inject = ['remote', 'slots', 'locale']

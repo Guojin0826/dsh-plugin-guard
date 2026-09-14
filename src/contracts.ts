@@ -474,14 +474,6 @@ export const skillEntrySchema = z.object({
   description: z.string(),
 }).readonly()
 
-export const safeSkillCacheEntrySchema = z.object({
-  contentHash: z.string().min(1),
-  safeSkillSha256: z.string().min(1),
-  report: safeSkillReportSchema,
-  cachedAt: z.number().int().positive(),
-  skillName: z.string().min(1),
-}).readonly()
-
 export const skillScanResultSchema = z.object({
   skillName: z.string().min(1),
   report: safeSkillReportSchema.nullable(),

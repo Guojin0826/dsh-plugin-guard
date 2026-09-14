@@ -12,6 +12,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { crc32 } from 'node:zlib'
 import { isSafePackageName } from './scanner.ts'
 import type { SafeSkillReport, SafeSkillThreat, SafeSkillIndicator, SkillEntry, SafeSkillCacheEntry, SkillScanResult } from './contracts.ts'
 import type { Severity } from './contracts.ts'
@@ -116,24 +117,8 @@ function collectSkillFiles(dir: string): ZipEntry[] {
 // ── Minimal ZIP writer (method 0 = stored, no compression) ──────────────────
 // Node has no built-in zip, and pulling a dependency for a folder of a few
 // small files is not worth it. A "stored" archive is a plain container: local
-// header + data + central directory + end record. CRC32 uses the standard
-// reflected IEEE table.
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256)
-  for (let n = 0; n < 256; n += 1) {
-    let c = n
-    for (let k = 0; k < 8; k += 1) c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    table[n] = c >>> 0
-  }
-  return table
-})()
-
-function crc32(data: Uint8Array): number {
-  let crc = 0xffffffff
-  for (let i = 0; i < data.length; i += 1) crc = CRC_TABLE[(crc ^ data[i]!) & 0xff]! ^ (crc >>> 8)
-  return (crc ^ 0xffffffff) >>> 0
-}
+// header + data + central directory + end record. CRC32 comes from node:zlib
+// (>= 22.2.0), which is the standard reflected IEEE checksum.
 
 function zipStored(files: ZipEntry[]): Uint8Array {
   const encoder = new TextEncoder()

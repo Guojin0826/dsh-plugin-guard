@@ -687,40 +687,6 @@ export declare const skillEntrySchema: z.ZodReadonly<z.ZodObject<{
     name: z.ZodString;
     description: z.ZodString;
 }, z.core.$strip>>;
-export declare const safeSkillCacheEntrySchema: z.ZodReadonly<z.ZodObject<{
-    contentHash: z.ZodString;
-    safeSkillSha256: z.ZodString;
-    report: z.ZodReadonly<z.ZodObject<{
-        skillName: z.ZodString;
-        sha256: z.ZodString;
-        threatLevel: z.ZodEnum<{
-            unknown: "unknown";
-            suspicious: "suspicious";
-            malicious: "malicious";
-            clean: "clean";
-        }>;
-        threatClassify: z.ZodString;
-        trustScore: z.ZodNumber;
-        multiVerdict: z.ZodRecord<z.ZodString, z.ZodString>;
-        indicators: z.ZodArray<z.ZodReadonly<z.ZodObject<{
-            indicator: z.ZodString;
-            category: z.ZodString;
-            severity: z.ZodEnum<{
-                high: "high";
-                medium: "medium";
-                low: "low";
-            }>;
-            evidence: z.ZodString;
-            sources: z.ZodArray<z.ZodObject<{
-                file: z.ZodString;
-                lines: z.ZodString;
-            }, z.core.$strip>>;
-        }, z.core.$strip>>>;
-        permalink: z.ZodString;
-    }, z.core.$strip>>;
-    cachedAt: z.ZodNumber;
-    skillName: z.ZodString;
-}, z.core.$strip>>;
 export declare const skillScanResultSchema: z.ZodReadonly<z.ZodObject<{
     skillName: z.ZodString;
     report: z.ZodNullable<z.ZodReadonly<z.ZodObject<{
