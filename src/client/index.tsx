@@ -56,6 +56,19 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'dsh-plugin-guard: remote')
 
+  /**
+   * Unwrap one Remote call: fail loudly when the namespace has not mounted yet,
+   * and turn the wire's `ok: false` branch into a thrown Error. `guard` is read
+   * at call time, so a call made before mount still reports correctly.
+   */
+  const call = async <T,>(invoke: (face: GuardFace) => Promise<RemoteOutcome<T>>): Promise<T> => {
+    const face = guard
+    if (face === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
+    const result = await invoke(face)
+    if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+    return result.value
+  }
+
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'dsh-plugin-guard',
@@ -63,96 +76,21 @@ export function apply(ctx: ClientContext): void {
     label: () => t('nav'),
     locale: NS,
     inject: (): SecuritySectionInjected => ({
-      getReport: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getReport()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getAiAudit: async (pluginName: string) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getAiAudit(pluginName)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      forceAiAudit: async (pluginName: string) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.forceAiAudit(pluginName)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getAiAuditStatus: async (pluginName: string) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getAiAuditStatus(pluginName)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getAiAuditCacheSnapshot: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getAiAuditCacheSnapshot()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getGithubTokenStatus: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getGithubTokenStatus()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      setGithubToken: async (token: string) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.setGithubToken(token)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getAuditConfig: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getAuditConfig()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      setAuditTtl: async (ttlHours: number) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.setAuditTtl(ttlHours)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getSafeSkillStatus: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getSafeSkillStatus()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      setSafeSkillKey: async (key: string) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.setSafeSkillKey(key)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      listSkills: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.listSkills()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      scanSkill: async (skillName: string) => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.scanSkill(skillName)
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      getSafeSkillCacheSnapshot: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.getSafeSkillCacheSnapshot()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
-      scanAllSkills: async () => {
-        if (guard === undefined) throw new Error('dsh-plugin-guard: the guard Remote is not mounted')
-        const result = await guard.scanAllSkills()
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        return result.value
-      },
+      getReport: () => call(face => face.getReport()),
+      getAiAudit: (pluginName: string) => call(face => face.getAiAudit(pluginName)),
+      forceAiAudit: (pluginName: string) => call(face => face.forceAiAudit(pluginName)),
+      getAiAuditStatus: (pluginName: string) => call(face => face.getAiAuditStatus(pluginName)),
+      getAiAuditCacheSnapshot: () => call(face => face.getAiAuditCacheSnapshot()),
+      getGithubTokenStatus: () => call(face => face.getGithubTokenStatus()),
+      setGithubToken: (token: string) => call(face => face.setGithubToken(token)),
+      getAuditConfig: () => call(face => face.getAuditConfig()),
+      setAuditTtl: (ttlHours: number) => call(face => face.setAuditTtl(ttlHours)),
+      getSafeSkillStatus: () => call(face => face.getSafeSkillStatus()),
+      setSafeSkillKey: (key: string) => call(face => face.setSafeSkillKey(key)),
+      listSkills: () => call(face => face.listSkills()),
+      scanSkill: (skillName: string) => call(face => face.scanSkill(skillName)),
+      getSafeSkillCacheSnapshot: () => call(face => face.getSafeSkillCacheSnapshot()),
+      scanAllSkills: () => call(face => face.scanAllSkills()),
     }),
   }, SecuritySection))
 }
