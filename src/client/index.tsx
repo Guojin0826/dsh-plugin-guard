@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { GUARD_REMOTE } from './remote.ts'
 import { SecuritySection, type SecuritySectionInjected } from './SecurityReportPanel.tsx'
 import { NS, zh, en } from './locales.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from '../contracts.ts'
 
 /** Required services: the Remote face, the slot registry, and locale. */
 export const inject = ['remote', 'slots', 'locale']
@@ -37,6 +37,8 @@ interface GuardFace {
   scanSkill(skillName: string): Promise<RemoteOutcome<SkillScanResult>>
   getSafeSkillCacheSnapshot(): Promise<RemoteOutcome<SkillScanResult[]>>
   scanAllSkills(): Promise<RemoteOutcome<SkillScanResult[]>>
+  auditSkill(skillName: string): Promise<RemoteOutcome<SkillAiAuditOutcome>>
+  getSkillAiAuditSnapshot(): Promise<RemoteOutcome<SkillAiAuditResult[]>>
 }
 
 /** Compose the security-report surface. */
@@ -91,6 +93,8 @@ export function apply(ctx: ClientContext): void {
       scanSkill: (skillName: string) => call(face => face.scanSkill(skillName)),
       getSafeSkillCacheSnapshot: () => call(face => face.getSafeSkillCacheSnapshot()),
       scanAllSkills: () => call(face => face.scanAllSkills()),
+      auditSkill: (skillName: string) => call(face => face.auditSkill(skillName)),
+      getSkillAiAuditSnapshot: () => call(face => face.getSkillAiAuditSnapshot()),
     }),
   }, SecuritySection))
 }

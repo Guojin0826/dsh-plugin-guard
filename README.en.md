@@ -32,6 +32,12 @@
   (LLM / static / dynamic / sub-files / external-URL verdicts) showing threat level, trust
   score, threat classification, and detailed risk indicators inline, with a link to the
   full report.
+- **Skill AI audit (fallback)**: when the SafeSkill quota is exhausted, no API Key is set, or
+  the platform is unreachable, review a single skill locally with the DSH default model — no
+  SafeSkill quota consumed. Applies a skill-specific threat model (prompt injection / hidden
+  or over-reaching instructions / dangerous commands / supply chain / deceptive descriptions)
+  to the skill's full contents (binary files become a placeholder), and caches verdicts by
+  skill name + content hash.
 - **Light / dark theme support**: the report panel auto-detects the app's theme and
   switches, so all text, badges, and controls remain readable under either theme without a
   page refresh.
@@ -114,6 +120,14 @@ perform online multi-engine security scanning of installed DSH Skills in the cur
 - **Note**: SafeSkill is an independent external platform; scan results are provided by
   ThreatBook. This plugin only handles packaging, upload, and result display — it performs
   no local judgments. No requests are made before an API Key is configured.
+- **AI fallback**: when the SafeSkill quota is exhausted (`code=-4`), no API Key is set, or
+  the platform is unreachable, use the **AI Audit** button next to any skill to review it
+  locally with the DSH default model — **no SafeSkill quota is consumed**. The audit reads the
+  skill's full contents (SKILL.md plus supporting files; binary files become a placeholder
+  instead of being decoded as text) and applies a skill-specific threat model: prompt
+  injection, hidden or over-reaching instructions, dangerous commands, supply-chain risk, and
+  deceptive descriptions. Verdicts are cached by skill name + content hash, so an unchanged
+  skill never triggers a repeat model call.
 
 ## What it checks
 
@@ -193,6 +207,14 @@ independent third-party verdict — it answers "is this skill file known to be
 malicious / suspicious." The AI audit is the plugin's own internal audit using the DSH
 default model — it answers "what's the overall risk of this plugin, considering its code,
 supply chain, and reputation." The two are independent and can be used at the same time.
+
+**Q: What if I'm out of SafeSkill quota?**
+
+Use the **AI Audit** button next to any skill. It reviews that skill's full contents locally
+with the DSH default model — no SafeSkill quota consumed, and no API Key required. Verdicts are
+cached by content hash, so an unchanged skill is never re-sent to the model. The two judge
+different things (SafeSkill asks "is this known-malicious"; the AI asks "do the instructions
+match the stated purpose"), so treat them as complementary.
 
 ## Limitations & disclaimer
 

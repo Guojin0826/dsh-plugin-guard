@@ -24,6 +24,15 @@ interface ModelSelection {
 export declare function resolveAuditModel(ctx: Context): ModelSelection;
 /** Fallback 0–100 score when the model omits the field (also used for older cached results). */
 export declare function scoreFromVerdict(verdict: AiAssessment['verdict']): number;
+/** Audit one skill with the harness default model — the offline fallback when SafeSkill cannot run. */
+export declare function auditSkillWithAi(ctx: Context, skillName: string, description: string, files: {
+    path: string;
+    text: string;
+}[], onProgress?: (phase: AuditPhase, detail: string) => void): Promise<AiAssessment & {
+    provider: string;
+    model: string;
+    generatedAt: string;
+}>;
 /**
  * True when the fresh reputation carries a negative signal the cached verdict
  * never saw: a new OSV advisory, a new relevance-filtered malicious/attack web

@@ -7,10 +7,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { auditPluginWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
+import { auditPluginWithAi, auditSkillWithAi, fetchPluginReputation, hasNewNegativeSignal, resolveAuditModel, scoreFromVerdict } from './ai-audit.ts'
 import { buildBaseline, collectPluginMetadata, computePluginDeltas, computePluginFingerprint, runAudit, type BaselineSnapshot } from './scanner.ts'
-import { getCachedResults, listLocalSkills, scanSkillWithCache } from './safeskill.ts'
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts'
+import { readSkillSources, computeSkillContentHash, getCachedResults, listLocalSkills, scanSkillWithCache } from './safeskill.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, PluginAudit, SafeSkillStatus, SecurityReport, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from './contracts.ts'
 
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
@@ -193,6 +193,42 @@ export class GuardRuntime extends TypertRemoteService {
   private aiCacheFile(): string {
     const dir = this.tokenDir()
     return dir === '' ? '' : join(dir, 'ai-cache.json')
+  }
+
+  /** File holding the skill AI-audit cache, keyed by skill content hash (best-effort, Host-local). */
+  private skillAiCacheFile(): string {
+    const dir = this.tokenDir()
+    return dir === '' ? '' : join(dir, 'skill-ai-cache.json')
+  }
+
+  private loadSkillAiCache(): Record<string, SkillAiAuditResult> {
+    const file = this.skillAiCacheFile()
+    if (file === '') return {}
+    try {
+      const raw = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>
+      const out: Record<string, SkillAiAuditResult> = {}
+      for (const [hash, entry] of Object.entries(raw)) {
+        if (entry === null || typeof entry !== 'object') continue
+        const record = entry as Record<string, unknown>
+        if (typeof record.skillName !== 'string' || typeof record.summary !== 'string' || typeof record.verdict !== 'string') continue
+        out[hash] = record as unknown as SkillAiAuditResult
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+
+  private saveSkillAiCache(cache: Record<string, SkillAiAuditResult>): void {
+    const file = this.skillAiCacheFile()
+    if (file === '') return
+    try {
+      mkdirSync(this.tokenDir(), { recursive: true })
+      writeFileSync(file, JSON.stringify(cache), 'utf-8')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[plugin-guard] 无法持久化 Skill AI 审计缓存: ${message}`)
+    }
   }
 
   private loadAiCache(): AiCacheFile {
@@ -438,5 +474,49 @@ export class GuardRuntime extends TypertRemoteService {
       }
     }
     return results
+  }
+
+  /**
+   * AI-audit one skill with the harness default model — the offline fallback
+   * when SafeSkill cannot run (quota exhausted, no key, or the platform is
+   * unreachable). Cached by skill content hash, so re-auditing an unchanged
+   * skill costs nothing.
+   */
+  @Remote
+  async auditSkill(skillName: string): Promise<SkillAiAuditOutcome> {
+    try {
+      const skills = listLocalSkills()
+      const entry = skills.find(skill => skill.name === skillName)
+      const description = entry?.description ?? ''
+      const files = readSkillSources(skillName)
+      if (files.length === 0) throw new Error(`skill "${skillName}" 目录为空`)
+      const contentHash = computeSkillContentHash(skillName)
+      // Key on name + content: `computeSkillContentHash` is a pure content hash
+      // (mirroring how SafeSkill keys by sha256), so two differently-named skills
+      // with identical bytes would otherwise collide and cross-attribute verdicts.
+      const cacheKey = `${skillName}:${contentHash}`
+
+      const cache = this.loadSkillAiCache()
+      const hit = cache[cacheKey]
+      // Normalise the stored name: a hit is this skill's verdict, whatever the
+      // entry says (guards against a hand-edited or older cache file).
+      if (hit !== undefined) return { skillName, result: { ...hit, skillName, cached: true }, error: null }
+
+      const assessment = await auditSkillWithAi(this.ctx, skillName, description, files)
+      const result: SkillAiAuditResult = { ...assessment, skillName, cached: false }
+      cache[cacheKey] = result
+      this.saveSkillAiCache(cache)
+      return { skillName, result, error: null }
+    } catch (err) {
+      return { skillName, result: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /** Every cached skill AI verdict, so the panel can restore them after a refresh. */
+  @Remote
+  async getSkillAiAuditSnapshot(): Promise<SkillAiAuditResult[]> {
+    // Stamp `cached: true` on restore, mirroring `getAiAuditCacheSnapshot`: every
+    // entry here came off disk, so the panel shows the cache badge.
+    return Object.values(this.loadSkillAiCache()).map(entry => ({ ...entry, cached: true }))
   }
 }

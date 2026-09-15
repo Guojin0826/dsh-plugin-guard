@@ -66,6 +66,9 @@ access:
 - `scanSkill(skillName)` — cache-aware SafeSkill scan of one skill
 - `getSafeSkillCacheSnapshot()` — restore cached SafeSkill results
 - `scanAllSkills()` — serial batch scan of every installed skill
+- `auditSkill(skillName)` — AI-audit one skill with the harness default model
+  (the offline fallback when SafeSkill cannot run; cached by skill content hash)
+- `getSkillAiAuditSnapshot()` — restore cached skill AI verdicts after a refresh
 
 ## Interpreting results
 

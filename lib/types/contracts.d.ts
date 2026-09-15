@@ -632,6 +632,25 @@ export interface SkillScanResult {
     readonly cachedAt: number | null;
     readonly error: string | null;
 }
+/**
+ * AI verdict for one skill, used as the offline fallback when the SafeSkill
+ * quota is exhausted (or no key is configured). Reuses the plugin audit's
+ * `AiAssessment` shape so the panel renders both with the same components.
+ */
+export interface SkillAiAuditResult extends AiAssessment {
+    readonly skillName: string;
+    readonly provider: string;
+    readonly model: string;
+    readonly generatedAt: string;
+    /** True when served from the content-hash cache rather than a fresh model call. */
+    readonly cached: boolean;
+}
+/** Outcome of one skill AI audit: the verdict, or the reason it could not run. */
+export interface SkillAiAuditOutcome {
+    readonly skillName: string;
+    readonly result: SkillAiAuditResult | null;
+    readonly error: string | null;
+}
 export declare const safeSkillThreatSchema: z.ZodEnum<{
     unknown: "unknown";
     suspicious: "suspicious";
@@ -719,6 +738,54 @@ export declare const skillScanResultSchema: z.ZodReadonly<z.ZodObject<{
     }, z.core.$strip>>>;
     fromCache: z.ZodBoolean;
     cachedAt: z.ZodNullable<z.ZodNumber>;
+    error: z.ZodNullable<z.ZodString>;
+}, z.core.$strip>>;
+export declare const skillAiAuditResultSchema: z.ZodReadonly<z.ZodObject<{
+    skillName: z.ZodString;
+    verdict: z.ZodEnum<{
+        suspicious: "suspicious";
+        safe: "safe";
+        malicious: "malicious";
+        inconclusive: "inconclusive";
+    }>;
+    risk: z.ZodEnum<{
+        red: "red";
+        yellow: "yellow";
+        green: "green";
+    }>;
+    score: z.ZodNumber;
+    summary: z.ZodString;
+    concerns: z.ZodArray<z.ZodString>;
+    recommendations: z.ZodArray<z.ZodString>;
+    provider: z.ZodString;
+    model: z.ZodString;
+    generatedAt: z.ZodString;
+    cached: z.ZodBoolean;
+}, z.core.$strip>>;
+export declare const skillAiAuditOutcomeSchema: z.ZodReadonly<z.ZodObject<{
+    skillName: z.ZodString;
+    result: z.ZodNullable<z.ZodReadonly<z.ZodObject<{
+        skillName: z.ZodString;
+        verdict: z.ZodEnum<{
+            suspicious: "suspicious";
+            safe: "safe";
+            malicious: "malicious";
+            inconclusive: "inconclusive";
+        }>;
+        risk: z.ZodEnum<{
+            red: "red";
+            yellow: "yellow";
+            green: "green";
+        }>;
+        score: z.ZodNumber;
+        summary: z.ZodString;
+        concerns: z.ZodArray<z.ZodString>;
+        recommendations: z.ZodArray<z.ZodString>;
+        provider: z.ZodString;
+        model: z.ZodString;
+        generatedAt: z.ZodString;
+        cached: z.ZodBoolean;
+    }, z.core.$strip>>>;
     error: z.ZodNullable<z.ZodString>;
 }, z.core.$strip>>;
 /** The plugin-guard Remote namespace's strict invocation descriptors. */

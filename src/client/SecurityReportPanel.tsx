@@ -1,7 +1,7 @@
 /** Settings section rendering the plugin security audit report (green/yellow/red) plus per-plugin AI audit with live progress. */
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useReducer, useRef, useState, type ReactElement } from 'react'
-import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SafeSkillReport, SafeSkillStatus, SafeSkillThreat, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts'
+import type { AiAuditResult, AuditCacheConfig, AuditPhase, AuditProgress, GithubEvidence, GithubTokenStatus, PluginAudit, PluginDelta, ReputationEvidence, SafeSkillReport, SafeSkillStatus, SafeSkillThreat, SecurityReport, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from '../contracts.ts'
 
 export interface SecuritySectionInjected {
   getReport: () => Promise<SecurityReport>
@@ -19,6 +19,8 @@ export interface SecuritySectionInjected {
   scanSkill: (skillName: string) => Promise<SkillScanResult>
   getSafeSkillCacheSnapshot: () => Promise<SkillScanResult[]>
   scanAllSkills: () => Promise<SkillScanResult[]>
+  auditSkill: (skillName: string) => Promise<SkillAiAuditOutcome>
+  getSkillAiAuditSnapshot: () => Promise<SkillAiAuditResult[]>
 }
 
 type SecuritySectionProps = InjectFace<SecuritySectionInjected> & PropsLocale<'dsh-plugin-guard'>
@@ -157,6 +159,10 @@ type SkillState = {
   report: SafeSkillReport | null
   error: string | null
   fromCache?: boolean
+  /** AI fallback audit for this skill (used when SafeSkill is unavailable). */
+  aiLoading?: boolean
+  aiResult?: SkillAiAuditResult | null
+  aiError?: string | null
 }
 
 /** Module-level store so a SafeSkill scan keeps running (and stays visible) across panel close, mirroring the AI store. */
@@ -596,11 +602,13 @@ interface SkillSectionProps {
   scanSkill: (skillName: string) => Promise<SkillScanResult>
   getSafeSkillCacheSnapshot: () => Promise<SkillScanResult[]>
   scanAllSkills: () => Promise<SkillScanResult[]>
+  auditSkill: (skillName: string) => Promise<SkillAiAuditOutcome>
+  getSkillAiAuditSnapshot: () => Promise<SkillAiAuditResult[]>
   t: (key: string) => string
 }
 
 /** Skill audit block: SafeSkill API-key opt-in + per-skill multi-engine scan. */
-function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, getSafeSkillCacheSnapshot, scanAllSkills, t }: SkillSectionProps): ReactElement {
+function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, getSafeSkillCacheSnapshot, scanAllSkills, auditSkill, getSkillAiAuditSnapshot, t }: SkillSectionProps): ReactElement {
   const [, forceRender] = useReducer((n: number) => n + 1, 0)
   const [skills, setSkills] = useState<SkillEntry[]>([])
   const [skillsError, setSkillsError] = useState<string | null>(null)
@@ -632,6 +640,23 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
     })()
     return () => { disposed = true }
   }, [getSafeSkillCacheSnapshot])
+
+  // Restore cached skill AI-audit verdicts on mount / refresh.
+  useEffect(() => {
+    let disposed = false
+    void (async () => {
+      try {
+        const cached = await getSkillAiAuditSnapshot()
+        if (disposed) return
+        for (const entry of cached) {
+          setSkillState(entry.skillName, { aiResult: entry, aiError: null, aiLoading: false })
+        }
+      } catch {
+        // best-effort — cache restore failure is never surfaced
+      }
+    })()
+    return () => { disposed = true }
+  }, [getSkillAiAuditSnapshot])
 
   const refreshSkills = async (): Promise<void> => {
     setSkillsError(null)
@@ -698,6 +723,18 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
       setSkillState(name, { loading: false, report: result.report, error: result.error, fromCache: result.fromCache })
     } catch (cause) {
       setSkillState(name, { loading: false, report: null, error: cause instanceof Error ? cause.message : String(cause), fromCache: false })
+    }
+  }
+
+  /** AI fallback: audit this skill with the harness default model (no SafeSkill quota used). */
+  const auditWithAi = async (name: string): Promise<void> => {
+    if (getSkillState(name).aiLoading === true) return
+    setSkillState(name, { aiLoading: true, aiError: null, aiResult: null })
+    try {
+      const outcome = await auditSkill(name)
+      setSkillState(name, { aiLoading: false, aiResult: outcome.result, aiError: outcome.error })
+    } catch (cause) {
+      setSkillState(name, { aiLoading: false, aiResult: null, aiError: cause instanceof Error ? cause.message : String(cause) })
     }
   }
 
@@ -809,6 +846,7 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
       {keySaved && <div style={{ marginTop: 6, fontSize: 12, color: palette.green }}>{t('tokenSaved')}</div>}
       {keyError !== null && <div style={{ marginTop: 6, fontSize: 12, color: palette.red }}>{keyError}</div>}
       {!configured && <div style={{ marginTop: 10, fontSize: 12, color: palette.mute, fontStyle: 'italic' }}>{t('skillNoKey')}</div>}
+      <div style={{ marginTop: 8, fontSize: 12, color: palette.mute }}>{t('skillQuotaFallback')}</div>
 
       <div style={{ marginTop: 10 }}>
         {skillsError !== null
@@ -833,6 +871,18 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
                       }}
                     >
                       {t('skillScan')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={state.aiLoading === true}
+                      onClick={() => { void auditWithAi(skill.name) }}
+                      title={t('skillQuotaFallback')}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.surface,
+                        cursor: state.aiLoading === true ? 'default' : 'pointer', fontSize: 13, opacity: state.aiLoading === true ? 0.6 : 1,
+                      }}
+                    >
+                      {state.aiLoading === true ? t('skillAiAuditing') : t('skillAiAudit')}
                     </button>
                   </div>
                   {state.loading && (
@@ -884,6 +934,40 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
                       )}
                     </div>
                   )}
+                  {state.aiError != null && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: palette.redBg, color: palette.red, fontSize: 12 }}>
+                      {t('skillAiError')}: {state.aiError}
+                    </div>
+                  )}
+                  {state.aiResult != null && (
+                    <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 6, border: `1px solid ${riskColor(state.aiResult.risk)}`, background: riskBg(state.aiResult.risk) }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: riskColor(state.aiResult.risk) }}>
+                          {t('aiVerdict')}: {t(VERDICT_KEY[state.aiResult.verdict])}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{t('colScore')}: {state.aiResult.score}</span>
+                        <span style={{ fontSize: 11, color: palette.mute }}>{t('aiModel')}: {state.aiResult.provider}/{state.aiResult.model}</span>
+                        {state.aiResult.cached && <span style={{ fontSize: 11, color: palette.mute, fontWeight: 600 }}>⟳ {t('cacheHit')}</span>}
+                      </div>
+                      <div style={{ fontSize: 13, marginTop: 6, whiteSpace: 'pre-wrap' }}>{state.aiResult.summary}</div>
+                      {state.aiResult.concerns.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>{t('aiConcerns')}</div>
+                          <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                            {state.aiResult.concerns.map((concern, index) => <li key={index}>{concern}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {state.aiResult.recommendations.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>{t('aiRecommendations')}</div>
+                          <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                            {state.aiResult.recommendations.map((recommendation, index) => <li key={index}>{recommendation}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -892,7 +976,7 @@ function SkillSection({ getSafeSkillStatus, setSafeSkillKey, listSkills, scanSki
   )
 }
 
-export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, getSafeSkillCacheSnapshot, scanAllSkills, t }: SecuritySectionProps): ReactElement {
+export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, getSafeSkillCacheSnapshot, scanAllSkills, auditSkill, getSkillAiAuditSnapshot, t }: SecuritySectionProps): ReactElement {
   const [report, setReport] = useState<SecurityReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1236,6 +1320,8 @@ export function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAudi
         scanSkill={scanSkill}
         getSafeSkillCacheSnapshot={getSafeSkillCacheSnapshot}
         scanAllSkills={scanAllSkills}
+        auditSkill={auditSkill}
+        getSkillAiAuditSnapshot={getSkillAiAuditSnapshot}
         t={t}
       />
     </section>

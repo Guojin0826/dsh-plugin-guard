@@ -98,6 +98,16 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'scanAllSkills',
             signature: 'scanAllSkills(): Promise<SkillScanResult[]>',
           },
+          {
+            kind: 'method',
+            name: 'auditSkill',
+            signature: 'auditSkill(skillName: string): Promise<SkillAiAuditOutcome>',
+          },
+          {
+            kind: 'method',
+            name: 'getSkillAiAuditSnapshot',
+            signature: 'getSkillAiAuditSnapshot(): Promise<SkillAiAuditResult[]>',
+          },
         ],
         types: [],
       },

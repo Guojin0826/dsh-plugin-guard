@@ -1,7 +1,7 @@
 /** Settings section rendering the plugin security audit report (green/yellow/red) plus per-plugin AI audit with live progress. */
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import { type ReactElement } from 'react';
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts';
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from '../contracts.ts';
 export interface SecuritySectionInjected {
     getReport: () => Promise<SecurityReport>;
     getAiAudit: (pluginName: string) => Promise<AiAuditResult>;
@@ -18,7 +18,9 @@ export interface SecuritySectionInjected {
     scanSkill: (skillName: string) => Promise<SkillScanResult>;
     getSafeSkillCacheSnapshot: () => Promise<SkillScanResult[]>;
     scanAllSkills: () => Promise<SkillScanResult[]>;
+    auditSkill: (skillName: string) => Promise<SkillAiAuditOutcome>;
+    getSkillAiAuditSnapshot: () => Promise<SkillAiAuditResult[]>;
 }
 type SecuritySectionProps = InjectFace<SecuritySectionInjected> & PropsLocale<'dsh-plugin-guard'>;
-export declare function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, getSafeSkillCacheSnapshot, scanAllSkills, t }: SecuritySectionProps): ReactElement;
+export declare function SecuritySection({ getReport, getAiAudit, forceAiAudit, getAiAuditStatus, getAiAuditCacheSnapshot, getGithubTokenStatus, setGithubToken, getAuditConfig, setAuditTtl, getSafeSkillStatus, setSafeSkillKey, listSkills, scanSkill, getSafeSkillCacheSnapshot, scanAllSkills, auditSkill, getSkillAiAuditSnapshot, t }: SecuritySectionProps): ReactElement;
 export {};

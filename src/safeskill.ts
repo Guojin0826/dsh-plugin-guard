@@ -331,6 +331,40 @@ export async function runSafeSkillScan(skillName: string, apiKey: string): Promi
   return pollReport(skillName, sha256, permalink, apiKey)
 }
 
+/** True when the bytes look binary (a NUL in the head) — the classic git heuristic. */
+function looksBinary(data: Uint8Array): boolean {
+  const limit = Math.min(data.length, 8000)
+  for (let index = 0; index < limit; index += 1) {
+    if (data[index] === 0) return true
+  }
+  return false
+}
+
+/**
+ * Read one skill's files as UTF-8 text for the AI fallback audit — the same
+ * walk (symlinks / VCS / dep dirs skipped, size-capped) the SafeSkill upload
+ * uses, so the AI sees exactly what would have been submitted.
+ *
+ * Binary payloads are not decoded: dumping a PNG as text burns the prompt
+ * budget on replacement characters and tells the model nothing. They are kept
+ * as a one-line placeholder instead, because a binary blob inside a skill that
+ * claims to be a Markdown instruction bundle is itself a finding worth judging.
+ */
+export function readSkillSources(skillName: string): { path: string; text: string }[] {
+  const root = skillsRoot()
+  if (root === '') throw new Error('DSH_HOME 未设置，无法定位 skills 目录')
+  if (!isSafePackageName(skillName)) throw new Error('非法的 skill 名称')
+  if (!existsSync(join(root, skillName, SKILL_ENTRY))) throw new Error(`skills/${skillName}/${SKILL_ENTRY} 不存在`)
+  const decoder = new TextDecoder('utf-8', { fatal: false })
+  return collectSkillFiles(join(root, skillName)).map(file => {
+    if (looksBinary(file.data)) {
+      return { path: file.path, text: `[二进制文件，${file.data.length} 字节，内容未包含]` }
+    }
+    // Defensive: never let a stray NUL reach the prompt even in a text file.
+    return { path: file.path, text: decoder.decode(file.data).replace(/\u0000/g, '') }
+  })
+}
+
 // ── Search-first cache layer ───────────────────────────────────────────────
 // Before uploading to SafeSkill, compute a SHA-256 of the skill's zip content
 // and check the local cache. Matching content hash → skip submit+poll → return

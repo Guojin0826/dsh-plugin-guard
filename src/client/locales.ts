@@ -121,6 +121,10 @@ export const zh: Record<string, string> = {
   skillScanningAll: '扫描中… {current}/{total}',
   skillFromCache: '（缓存）',
   skillScanFail: '扫描失败',
+  skillAiAudit: 'AI 审计',
+  skillAiAuditing: 'AI 审计中…',
+  skillQuotaFallback: 'SafeSkill 额度已用尽？可直接用 AI 审计本机审查该 Skill，不消耗 SafeSkill 额度。',
+  skillAiError: 'AI 审计失败',
 }
 
 export const en: Record<string, string> = {
@@ -241,6 +245,10 @@ export const en: Record<string, string> = {
   skillScanningAll: 'Scanning… {current}/{total}',
   skillFromCache: '(cached)',
   skillScanFail: 'Scan failed',
+  skillAiAudit: 'AI Audit',
+  skillAiAuditing: 'AI auditing…',
+  skillQuotaFallback: 'Out of SafeSkill quota? Audit this skill with the local AI model instead — no SafeSkill quota used.',
+  skillAiError: 'AI audit failed',
 }
 
 /** The guard locale namespace's dictionary key domain. */

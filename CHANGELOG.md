@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Skill AI audit (Skill AI 审计)**: a per-skill AI fallback for when SafeSkill cannot
+  run — quota exhausted (`code=-4`), no API Key configured, or the platform unreachable.
+  Each skill now has an **AI Audit** button that reviews the skill's full contents
+  (`SKILL.md` plus supporting files) with the DSH default model and **no SafeSkill quota**.
+  It uses a skill-specific threat model (prompt injection, hidden or over-reaching
+  instructions, dangerous commands, supply-chain risk, deceptive descriptions) rather than
+  the plugin prompt, because a skill is an instruction bundle the agent follows, not
+  executable code. Verdicts are cached by skill name + content hash and restored after a
+  refresh, so an unchanged skill never triggers a repeat model call. Binary files (e.g. an
+  image shipped inside a skill) are recorded as a one-line placeholder instead of being
+  decoded as text, so they neither burn the prompt budget nor tell the model nothing.
+  New RPC methods: `auditSkill(skillName)` and `getSkillAiAuditSnapshot()`.
+
+### Fixed
+
+- **Client Remote wrappers**: the 15 hand-written per-method wrappers in the client entry
+  collapsed into one typed `call<T>` helper, so the mount check and the wire-error
+  unwrapping have a single source of truth (behaviour verified identical across unmounted,
+  success, and error paths).
+
 ## [0.3.0] - 2026-09-12
 
 ### Added

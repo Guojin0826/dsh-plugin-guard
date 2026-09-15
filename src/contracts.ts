@@ -444,6 +444,27 @@ export interface SkillScanResult {
   readonly error: string | null
 }
 
+/**
+ * AI verdict for one skill, used as the offline fallback when the SafeSkill
+ * quota is exhausted (or no key is configured). Reuses the plugin audit's
+ * `AiAssessment` shape so the panel renders both with the same components.
+ */
+export interface SkillAiAuditResult extends AiAssessment {
+  readonly skillName: string
+  readonly provider: string
+  readonly model: string
+  readonly generatedAt: string
+  /** True when served from the content-hash cache rather than a fresh model call. */
+  readonly cached: boolean
+}
+
+/** Outcome of one skill AI audit: the verdict, or the reason it could not run. */
+export interface SkillAiAuditOutcome {
+  readonly skillName: string
+  readonly result: SkillAiAuditResult | null
+  readonly error: string | null
+}
+
 export const safeSkillThreatSchema = z.enum(['malicious', 'suspicious', 'unknown', 'clean'])
 
 export const safeSkillIndicatorSchema = z.object({
@@ -479,6 +500,26 @@ export const skillScanResultSchema = z.object({
   report: safeSkillReportSchema.nullable(),
   fromCache: z.boolean(),
   cachedAt: z.number().nullable(),
+  error: z.string().nullable(),
+}).readonly()
+
+export const skillAiAuditResultSchema = z.object({
+  skillName: z.string().min(1),
+  verdict: aiVerdictSchema,
+  risk: riskLevelSchema,
+  score: z.number().int().min(0).max(100),
+  summary: z.string().min(1),
+  concerns: z.array(z.string()),
+  recommendations: z.array(z.string()),
+  provider: z.string(),
+  model: z.string(),
+  generatedAt: z.string().min(1),
+  cached: z.boolean(),
+}).readonly()
+
+export const skillAiAuditOutcomeSchema = z.object({
+  skillName: z.string().min(1),
+  result: skillAiAuditResultSchema.nullable(),
   error: z.string().nullable(),
 }).readonly()
 
@@ -754,6 +795,43 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
       mode: 'strict',
       typeSymbol: 'dsh-plugin-guard#SkillScanResult[]',
       schema: z.array(skillScanResultSchema),
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/auditSkill',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'auditSkill',
+    invocation: { kind: 'direct' },
+    parameters: [
+      {
+        name: 'skillName',
+        wire: 'skillName',
+        source: 'json',
+        codec: {
+          mode: 'strict',
+          typeSymbol: 'dsh-plugin-guard#guard/auditSkill:skillName',
+          schema: z.string().min(1),
+        },
+      },
+    ],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SkillAiAuditOutcome',
+      schema: skillAiAuditOutcomeSchema,
+    },
+  },
+  {
+    id: 'dsh-plugin-guard#guard/getSkillAiAuditSnapshot',
+    service: 'guard',
+    namespace: 'guard',
+    method: 'getSkillAiAuditSnapshot',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: 'dsh-plugin-guard#SkillAiAuditResult[]',
+      schema: z.array(skillAiAuditResultSchema),
     },
   },
 ]

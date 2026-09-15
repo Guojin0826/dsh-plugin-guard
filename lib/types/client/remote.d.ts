@@ -5,8 +5,8 @@
  * browser bundle and the host manifest stay on one wire definition.
  */
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol';
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from '../contracts.ts';
-export type { SecurityReport, AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SkillEntry, SkillScanResult } from '../contracts.ts';
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from '../contracts.ts';
+export type { SecurityReport, AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from '../contracts.ts';
 /** The guard Remote namespace's client contribution. */
 export declare const GUARD_REMOTE: TypertRemoteContribution;
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -27,6 +27,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         scanSkill: (skillName: string) => Promise<RemoteResult<SkillScanResult>>;
         getSafeSkillCacheSnapshot: () => Promise<RemoteResult<SkillScanResult[]>>;
         scanAllSkills: () => Promise<RemoteResult<SkillScanResult[]>>;
+        auditSkill: (skillName: string) => Promise<RemoteResult<SkillAiAuditOutcome>>;
+        getSkillAiAuditSnapshot: () => Promise<RemoteResult<SkillAiAuditResult[]>>;
     }
     interface TypertRemoteMap {
         'guard/getReport': () => Promise<RemoteResult<SecurityReport>>;
@@ -44,6 +46,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         'guard/scanSkill': (skillName: string) => Promise<RemoteResult<SkillScanResult>>;
         'guard/getSafeSkillCacheSnapshot': () => Promise<RemoteResult<SkillScanResult[]>>;
         'guard/scanAllSkills': () => Promise<RemoteResult<SkillScanResult[]>>;
+        'guard/auditSkill': (skillName: string) => Promise<RemoteResult<SkillAiAuditOutcome>>;
+        'guard/getSkillAiAuditSnapshot': () => Promise<RemoteResult<SkillAiAuditResult[]>>;
     }
     interface TypertRemoteNamespaceMap {
         guard: TypertRemoteNamespace$guard;

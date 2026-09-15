@@ -5,7 +5,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillEntry, SkillScanResult } from './contracts.ts';
+import type { AiAuditResult, AuditCacheConfig, AuditProgress, GithubTokenStatus, SafeSkillStatus, SecurityReport, SkillAiAuditOutcome, SkillAiAuditResult, SkillEntry, SkillScanResult } from './contracts.ts';
 /** Resolved, defaults-applied plugin configuration. */
 export interface ResolvedConfig {
     /** Profile name under `$DSH_HOME/profiles` to audit. */
@@ -42,6 +42,10 @@ export declare class GuardRuntime extends TypertRemoteService {
     private saveBaseline;
     /** File holding the persisted AI-audit result cache (best-effort, Host-local). */
     private aiCacheFile;
+    /** File holding the skill AI-audit cache, keyed by skill content hash (best-effort, Host-local). */
+    private skillAiCacheFile;
+    private loadSkillAiCache;
+    private saveSkillAiCache;
     private loadAiCache;
     private saveAiCache;
     /** Current AI-audit cache TTL in hours (0 disables the cache). */
@@ -80,4 +84,13 @@ export declare class GuardRuntime extends TypertRemoteService {
     getSafeSkillCacheSnapshot(): Promise<SkillScanResult[]>;
     /** Serial scan of every locally installed skill (cache-aware per skill, errors caught individually). */
     scanAllSkills(): Promise<SkillScanResult[]>;
+    /**
+     * AI-audit one skill with the harness default model — the offline fallback
+     * when SafeSkill cannot run (quota exhausted, no key, or the platform is
+     * unreachable). Cached by skill content hash, so re-auditing an unchanged
+     * skill costs nothing.
+     */
+    auditSkill(skillName: string): Promise<SkillAiAuditOutcome>;
+    /** Every cached skill AI verdict, so the panel can restore them after a refresh. */
+    getSkillAiAuditSnapshot(): Promise<SkillAiAuditResult[]>;
 }
