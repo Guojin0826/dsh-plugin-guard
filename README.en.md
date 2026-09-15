@@ -63,7 +63,7 @@ Once running, open **Settings → Plugin Security** in the web GUI.
 
 > Uninstall: `dsh plugin --profile <name> remove @guojin-ai/dsh-plugin-guard`
 >
-> Note: DSH identifies this plugin internally as `dsh-plugin-guard` (different from the npm package name `@guojin-ai/dsh-plugin-guard` — this is expected).
+> Note: the Loader row's `name` **must** equal this package's npm name `@guojin-ai/dsh-plugin-guard` exactly — `dsh-client-modules` matches that string literally to recognize a web-client plugin. If it says the bare `dsh-plugin-guard`, the host half still loads (the plugin looks enabled) but the client bundle is silently dropped: the **Plugin Security** settings page never appears and nothing is logged. The row's `id: dsh-plugin-guard` is a separate stable identifier (used by `disabled` to target the row) and is expected to differ.
 
 ## Usage guide
 
@@ -215,6 +215,27 @@ with the DSH default model — no SafeSkill quota consumed, and no API Key requi
 cached by content hash, so an unchanged skill is never re-sent to the model. The two judge
 different things (SafeSkill asks "is this known-malicious"; the AI asks "do the instructions
 match the stated purpose"), so treat them as complementary.
+
+**Q: The plugin shows as loaded, but there is no "Plugin Security" page in Settings.**
+
+That means the loader row's `name` is the bare `dsh-plugin-guard`. `dsh-client-modules`
+compares that string for **strict equality** against the resolved `package.json`'s `name`
+(`@guojin-ai/dsh-plugin-guard`); on a mismatch it **silently drops the client bundle** — the
+host half loads as usual (so the plugin looks enabled) but the settings page never appears,
+with nothing in the logs.
+
+Check the row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml` (or the plugin's own
+`cordis.patch.yml`) and fix its `name`:
+
+```yaml
+- insert:
+    - id: dsh-plugin-guard                          # stable identifier — keep as-is (targets `disabled`)
+      name: '@guojin-ai/dsh-plugin-guard'           # must equal package.json's name exactly
+```
+
+The client bundle must register under that **same package name** too (`build.mjs` now reads it
+from `package.json`, so it cannot drift again). Then **restart `dsh web`** — both the loader
+rows and the client bundles are composed at startup, and hot reload covers neither.
 
 ## Limitations & disclaimer
 

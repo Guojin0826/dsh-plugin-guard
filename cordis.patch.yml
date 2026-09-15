@@ -1,7 +1,9 @@
 # The dsh-plugin-guard bundle patch: one insert over the profile's layer stack.
-# `id` is the stable DSH plugin id (it must match the client bundle's
-# __ModuleLoader__ registration id); `name` is the bare module specifier the
-# Loader imports, i.e. this package's npm name.
+# `id` is the stable DSH plugin id (the label you use to disable the row).
+# `name` is the bare module specifier the Loader imports, i.e. this package's npm
+# name — and client-modules matches it against the resolved package.json `name`
+# by exact equality, so a mismatch here silently drops the whole client half
+# (the host still loads; the settings page never appears).
 - insert:
     - id: dsh-plugin-guard
       name: '@guojin-ai/dsh-plugin-guard'

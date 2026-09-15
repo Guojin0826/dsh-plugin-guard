@@ -53,7 +53,7 @@ dsh plugin --profile <name> add @guojin-ai/dsh-plugin-guard
 
 > 卸载：`dsh plugin --profile <name> remove @guojin-ai/dsh-plugin-guard`
 >
-> 说明：DSH 内部识别此插件的 id 是 `dsh-plugin-guard`（与 npm 包名 `@guojin-ai/dsh-plugin-guard` 不同，属正常现象）。
+> 说明：DSH 装载行的 `name` 必须与 `package.json` 的包名 `@guojin-ai/dsh-plugin-guard` **完全一致**——`dsh-client-modules` 是按这个字符串严格比对来识别 Web 客户端插件的。若写成裸名 `dsh-plugin-guard`，主机端仍会正常加载（插件看起来是启用的），但客户端 bundle 会被静默丢弃，表现为**设置里看不到「插件安全体检」页面且没有任何报错**。装载行的 `id: dsh-plugin-guard` 是稳定标识（用于 `disabled` 定位该行），与包名不同属正常。
 
 ## 使用指南
 
@@ -178,6 +178,20 @@ SafeSkill 是微步在线的外部多引擎扫描平台，提供独立第三方�
 **问：SafeSkill 没额度了怎么办？**
 
 用每个技能旁的「AI 审计」按钮。它调用 DSH 默认模型在本机审查该 Skill 的完整内容，不消耗 SafeSkill 额度，也不需要配置 API Key；结果按技能内容哈希缓存，内容未变不会重复调用模型。两者判定维度不同（SafeSkill 偏「是否已知恶意」，AI 偏「指令与自称功能是否一致」），建议互为参考。
+
+**问：插件显示已加载，但设置里找不到「插件安全体检」页面？**
+
+这是**装载行的 `name` 写成了裸名 `dsh-plugin-guard`** 导致的：`dsh-client-modules` 会把该字符串与解析到的 `package.json` 的 `name`（即 `@guojin-ai/dsh-plugin-guard`）做严格相等比对，不匹配时**静默丢弃客户端 bundle**——主机端照样加载（所以在插件列表里看得到），但设置页永远不会出现，且日志里没有任何报错。
+
+检查并修正 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`（或本插件自带的 `cordis.patch.yml`）中该行的 `name`：
+
+```yaml
+- insert:
+    - id: dsh-plugin-guard                          # 稳定标识，保持不变（用于 disabled 定位）
+      name: '@guojin-ai/dsh-plugin-guard'           # 必须与 package.json 的 name 完全一致
+```
+
+同时，客户端 bundle 必须用**同一个包名**注册（`build.mjs` 已从 `package.json` 读取，不会再漂移）。改完**重启 `dsh web`**（客户端 bundle 与装载行都在启动时组合，热更新不覆盖这两处）。
 
 ## 局限与免责
 

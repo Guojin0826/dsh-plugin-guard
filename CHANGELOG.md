@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings page never appeared when the loader row used the bare package name**: the plugin
+  showed as loaded but **Settings → Plugin Security** was missing, with nothing in the logs.
+  `dsh-client-modules` recognizes a web-client plugin by comparing the Loader row's `name`
+  against the resolved `package.json`'s `name` with **strict equality**; on a mismatch it
+  silently drops the whole client half while the host half keeps loading. `cordis.patch.yml`
+  now declares `name: '@guojin-ai/dsh-plugin-guard'`, and the client bundle registers under
+  that same package name — `build.mjs` reads it from `package.json` instead of repeating a
+  literal, so the two can no longer drift apart. (The row's `id: dsh-plugin-guard` is a
+  separate stable identifier used by `disabled`, and is expected to differ.)
 - **Client Remote wrappers**: the 15 hand-written per-method wrappers in the client entry
   collapsed into one typed `call<T>` helper, so the mount check and the wire-error
   unwrapping have a single source of truth (behaviour verified identical across unmounted,
