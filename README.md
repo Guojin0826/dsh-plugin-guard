@@ -193,6 +193,22 @@ SafeSkill 是微步在线的外部多引擎扫描平台，提供独立第三方�
 
 同时，客户端 bundle 必须用**同一个包名**注册（`build.mjs` 已从 `package.json` 读取，不会再漂移）。改完**重启 `dsh web`**（客户端 bundle 与装载行都在启动时组合，热更新不覆盖这两处）。
 
+**问：DSH 升级到 0.2 后，插件列表里显示「启动失败」？**
+
+插件在 **0.3.2 之前的版本**会在 DSH 0.2.x 上启动失败，报错：
+
+```
+typert: dsh-plugin-guard#guard/getReport result strict codec has no create() factory
+```
+
+原因是 DSH 0.2 改了 Typert 协议里 strict codec 的字段：0.1 直接把校验器实例放在 `schema`，0.2 改成工厂函数 `create`（边界解码时调 `codec.create().parse(value)`）。两个版本**各自只认自己的字段**——0.1 形状的 codec 在 0.2 上抛错，0.2 形状的在 0.1 上也抛错。0.3.2 起由 `contracts.ts` 里唯一的 `strict()` 辅助函数**同时产出两个字段**（工厂带记忆化），因此同一份发布产物在 0.1.5 与 0.2 上都能加载。升级即可：
+
+```bash
+dsh plugin --profile <profile> add @guojin-ai/dsh-plugin-guard@latest
+```
+
+然后重启 `dsh web`。若仍失败，请贴出启动日志中 `dsh-plugin-guard` 那一行——它会带上完整堆栈。
+
 ## 局限与免责
 
 - 这是**事后检测**：它读取源码与清单，无法拦截加载器在 `import()` 时已经执行的代码。

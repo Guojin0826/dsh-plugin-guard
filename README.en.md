@@ -237,6 +237,28 @@ The client bundle must register under that **same package name** too (`build.mjs
 from `package.json`, so it cannot drift again). Then **restart `dsh web`** — both the loader
 rows and the client bundles are composed at startup, and hot reload covers neither.
 
+**Q: After upgrading DSH to 0.2, the plugin list shows "startup failed" (`启动失败`).**
+
+Releases **before 0.3.2** fail to start on DSH 0.2.x with:
+
+```
+typert: dsh-plugin-guard#guard/getReport result strict codec has no create() factory
+```
+
+DSH 0.2 renamed the Typert strict codec's schema field: 0.1 carried the instantiated validator
+as `schema`, while 0.2 carries a factory as `create` (the boundary decoder calls
+`codec.create().parse(value)`). Each release validates **only its own** field — a 0.1-shaped
+codec throws on 0.2, and a 0.2-shaped one throws on 0.1. From 0.3.2 the single `strict()` helper
+in `contracts.ts` emits **both** fields (with the factory memoized), so one published artifact
+loads on both 0.1.5 and 0.2. Upgrade to fix it:
+
+```bash
+dsh plugin --profile <profile> add @guojin-ai/dsh-plugin-guard@latest
+```
+
+Then restart `dsh web`. If it still fails, paste the `dsh-plugin-guard` line from the startup
+log — it carries the full stack trace.
+
 ## Limitations & disclaimer
 
 - It is a **detective control**: it reads source and manifests, and cannot intercept code the loader already executed at `import()`.

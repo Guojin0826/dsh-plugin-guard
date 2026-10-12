@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Plugin failed to start on DSH 0.2 (`启动失败`)**: the plugin loaded fine on DSH 0.1.5 but
+  the whole fiber aborted on 0.2.0 with
+  `typert: dsh-plugin-guard#guard/getReport result strict codec has no create() factory`.
+  DSH 0.2 renamed the strict Typert codec's schema field: 0.1 carried the instantiated schema
+  as `schema`, while 0.2 carries a factory as `create` and its boundary decoder calls
+  `codec.create().parse(value)`. Each release validates **only its own** field, so a
+  0.1-shaped codec throws on 0.2 and a 0.2-shaped one throws on 0.1. Every strict codec is now
+  built by one `strict(typeSymbol, schema)` helper in `contracts.ts` that emits **both** fields
+  (with the factory memoized), so a single published artifact loads on either release. The
+  codec shape itself is unchanged — `create()` returns the same zod schema `schema` always did.
 - **Settings page never appeared when the loader row used the bare package name**: the plugin
   showed as loaded but **Settings → Plugin Security** was missing, with nothing in the logs.
   `dsh-client-modules` recognizes a web-client plugin by comparing the Loader row's `name`
@@ -37,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collapsed into one typed `call<T>` helper, so the mount check and the wire-error
   unwrapping have a single source of truth (behaviour verified identical across unmounted,
   success, and error paths).
+
+### Changed
+
+- **Peer and dev dependency ranges widened to admit DSH 0.2**: the pinned
+  `@deepseek-ai/*: ^0.1.2-rc.1` ranges **cannot** match `0.2.0-rc.2` — `^0.1.2-rc.1` is a
+  0.1.x range, and node-semver additionally excludes prerelases whose `[major,minor,patch]`
+  tuple has no comparator, so even `0.1.5-rc.1` needed `includePrerelease`. They are now
+  `>=0.1.2-rc.1 <0.3.0`, which admits both the 0.1.5 line this plugin shipped against and
+  the 0.2 line the current host runs.
 
 ## [0.3.0] - 2026-09-12
 

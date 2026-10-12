@@ -7,7 +7,39 @@
  * can share it without pulling `node:fs`/`node:path`.
  */
 import { z } from 'zod'
-import type { InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
+import type { InvocationDescriptor, TypertSchema } from '@deepseek-ai/dsh-typert-protocol'
+
+/**
+ * Build one strict codec that satisfies BOTH typert wire protocols.
+ *
+ * DSH 0.2 renamed the strict codec's schema field: 0.1 carried the instantiated
+ * schema as `schema`, while 0.2 carries a factory as `create` and its boundary
+ * calls `codec.create().parse(value)` (`dsh-api-gateway` decode()). Each release
+ * validates only its own field — `validateCodec` throws "strict codec has no
+ * create() factory" on 0.2 for a 0.1-shaped codec, and the 0.1 registry throws
+ * "strict codec has no parse() method" for a 0.2-shaped one — so emitting both
+ * is what keeps one published artifact loadable on either release.
+ *
+ * The factory memoizes, so a schema is constructed once per process even though
+ * both fields are present; the schema itself is already a module-level constant.
+ * @param typeSymbol - generated-style `<package>#<Type>` wire identity.
+ * @param schema - the zod schema validating this boundary value.
+ * @returns a codec accepted by both the 0.1 and 0.2 registries.
+ */
+function strict(typeSymbol: string, schema: TypertSchema): {
+  mode: 'strict'
+  typeSymbol: string
+  schema: TypertSchema
+  create: () => TypertSchema
+} {
+  let cached: TypertSchema | undefined
+  return {
+    mode: 'strict',
+    typeSymbol,
+    schema,
+    create: () => (cached ??= schema),
+  }
+}
 
 export type Severity = 'high' | 'medium' | 'low'
 export type RiskLevel = 'red' | 'yellow' | 'green'
@@ -532,11 +564,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getReport',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SecurityReport',
-      schema: securityReportSchema,
-    },
+    result: strict('dsh-plugin-guard#SecurityReport', securityReportSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getAiAudit',
@@ -549,18 +577,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'pluginName',
         wire: 'pluginName',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/getAiAudit:pluginName',
-          schema: z.string().min(1),
-        },
+        codec: strict('dsh-plugin-guard#guard/getAiAudit:pluginName', z.string().min(1)),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#AiAuditResult',
-      schema: aiAuditResultSchema,
-    },
+    result: strict('dsh-plugin-guard#AiAuditResult', aiAuditResultSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/forceAiAudit',
@@ -573,18 +593,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'pluginName',
         wire: 'pluginName',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/forceAiAudit:pluginName',
-          schema: z.string().min(1),
-        },
+        codec: strict('dsh-plugin-guard#guard/forceAiAudit:pluginName', z.string().min(1)),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#AiAuditResult',
-      schema: aiAuditResultSchema,
-    },
+    result: strict('dsh-plugin-guard#AiAuditResult', aiAuditResultSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getAiAuditStatus',
@@ -597,18 +609,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'pluginName',
         wire: 'pluginName',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/getAiAuditStatus:pluginName',
-          schema: z.string().min(1),
-        },
+        codec: strict('dsh-plugin-guard#guard/getAiAuditStatus:pluginName', z.string().min(1)),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#AuditProgress | null',
-      schema: auditStatusSchema,
-    },
+    result: strict('dsh-plugin-guard#AuditProgress | null', auditStatusSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getGithubTokenStatus',
@@ -617,11 +621,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getGithubTokenStatus',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#GithubTokenStatus',
-      schema: githubTokenStatusSchema,
-    },
+    result: strict('dsh-plugin-guard#GithubTokenStatus', githubTokenStatusSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/setGithubToken',
@@ -634,18 +634,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'token',
         wire: 'token',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/setGithubToken:token',
-          schema: z.string(),
-        },
+        codec: strict('dsh-plugin-guard#guard/setGithubToken:token', z.string()),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#GithubTokenStatus',
-      schema: githubTokenStatusSchema,
-    },
+    result: strict('dsh-plugin-guard#GithubTokenStatus', githubTokenStatusSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getAuditConfig',
@@ -654,11 +646,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getAuditConfig',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#AuditCacheConfig',
-      schema: auditCacheConfigSchema,
-    },
+    result: strict('dsh-plugin-guard#AuditCacheConfig', auditCacheConfigSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/setAuditTtl',
@@ -671,18 +659,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'ttlHours',
         wire: 'ttlHours',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/setAuditTtl:ttlHours',
-          schema: z.number().min(0),
-        },
+        codec: strict('dsh-plugin-guard#guard/setAuditTtl:ttlHours', z.number().min(0)),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#AuditCacheConfig',
-      schema: auditCacheConfigSchema,
-    },
+    result: strict('dsh-plugin-guard#AuditCacheConfig', auditCacheConfigSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getAiAuditCacheSnapshot',
@@ -691,11 +671,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getAiAuditCacheSnapshot',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#AiAuditResult[]',
-      schema: z.array(aiAuditResultSchema),
-    },
+    result: strict('dsh-plugin-guard#AiAuditResult[]', z.array(aiAuditResultSchema)),
   },
   {
     id: 'dsh-plugin-guard#guard/getSafeSkillStatus',
@@ -704,11 +680,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getSafeSkillStatus',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SafeSkillStatus',
-      schema: safeSkillStatusSchema,
-    },
+    result: strict('dsh-plugin-guard#SafeSkillStatus', safeSkillStatusSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/setSafeSkillKey',
@@ -721,18 +693,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'key',
         wire: 'key',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/setSafeSkillKey:key',
-          schema: z.string(),
-        },
+        codec: strict('dsh-plugin-guard#guard/setSafeSkillKey:key', z.string()),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SafeSkillStatus',
-      schema: safeSkillStatusSchema,
-    },
+    result: strict('dsh-plugin-guard#SafeSkillStatus', safeSkillStatusSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/listSkills',
@@ -741,11 +705,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'listSkills',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SkillEntry[]',
-      schema: z.array(skillEntrySchema),
-    },
+    result: strict('dsh-plugin-guard#SkillEntry[]', z.array(skillEntrySchema)),
   },
   {
     id: 'dsh-plugin-guard#guard/scanSkill',
@@ -758,18 +718,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'skillName',
         wire: 'skillName',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/scanSkill:skillName',
-          schema: z.string().min(1),
-        },
+        codec: strict('dsh-plugin-guard#guard/scanSkill:skillName', z.string().min(1)),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SkillScanResult',
-      schema: skillScanResultSchema,
-    },
+    result: strict('dsh-plugin-guard#SkillScanResult', skillScanResultSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getSafeSkillCacheSnapshot',
@@ -778,11 +730,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getSafeSkillCacheSnapshot',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SkillScanResult[]',
-      schema: z.array(skillScanResultSchema),
-    },
+    result: strict('dsh-plugin-guard#SkillScanResult[]', z.array(skillScanResultSchema)),
   },
   {
     id: 'dsh-plugin-guard#guard/scanAllSkills',
@@ -791,11 +739,7 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'scanAllSkills',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SkillScanResult[]',
-      schema: z.array(skillScanResultSchema),
-    },
+    result: strict('dsh-plugin-guard#SkillScanResult[]', z.array(skillScanResultSchema)),
   },
   {
     id: 'dsh-plugin-guard#guard/auditSkill',
@@ -808,18 +752,10 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
         name: 'skillName',
         wire: 'skillName',
         source: 'json',
-        codec: {
-          mode: 'strict',
-          typeSymbol: 'dsh-plugin-guard#guard/auditSkill:skillName',
-          schema: z.string().min(1),
-        },
+        codec: strict('dsh-plugin-guard#guard/auditSkill:skillName', z.string().min(1)),
       },
     ],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SkillAiAuditOutcome',
-      schema: skillAiAuditOutcomeSchema,
-    },
+    result: strict('dsh-plugin-guard#SkillAiAuditOutcome', skillAiAuditOutcomeSchema),
   },
   {
     id: 'dsh-plugin-guard#guard/getSkillAiAuditSnapshot',
@@ -828,10 +764,6 @@ export const GUARD_INVOCATIONS: readonly InvocationDescriptor[] = [
     method: 'getSkillAiAuditSnapshot',
     invocation: { kind: 'direct' },
     parameters: [],
-    result: {
-      mode: 'strict',
-      typeSymbol: 'dsh-plugin-guard#SkillAiAuditResult[]',
-      schema: z.array(skillAiAuditResultSchema),
-    },
+    result: strict('dsh-plugin-guard#SkillAiAuditResult[]', z.array(skillAiAuditResultSchema)),
   },
 ]
