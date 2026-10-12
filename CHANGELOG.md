@@ -54,8 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@deepseek-ai/*: ^0.1.2-rc.1` ranges **cannot** match `0.2.0-rc.2` — `^0.1.2-rc.1` is a
   0.1.x range, and node-semver additionally excludes prerelases whose `[major,minor,patch]`
   tuple has no comparator, so even `0.1.5-rc.1` needed `includePrerelease`. They are now
-  `>=0.1.2-rc.1 <0.3.0`, which admits both the 0.1.5 line this plugin shipped against and
-  the 0.2 line the current host runs.
+  `^0.1.2-rc.1 || ^0.2.0-rc.2`, which admits both the 0.1.5 line this plugin shipped against
+  and the 0.2 line the current host runs.
+  An earlier attempt used `>=0.1.2-rc.1 <0.3.0`, which turned out **not** to admit 0.2 at all:
+  under default (non-`includePrerelease`) semantics that range still resolves to `0.1.2-rc.1`,
+  so it would have looked like a fix while changing nothing. Measured with node-semver:
+  `maxSatisfying` is `0.1.2-rc.1` for the `<0.3.0` form and `0.2.0-rc.2` for the `||` form.
 
 ## [0.3.0] - 2026-09-12
 

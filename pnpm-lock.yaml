@@ -12,28 +12,28 @@ importers:
         specifier: ^4.0.2
         version: 4.0.2
       '@deepseek-ai/dsh-api-remotes':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-scope@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)))
       '@deepseek-ai/dsh-client-locale':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-renderer':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(react@18.3.1)
       '@deepseek-ai/dsh-client-ui-settings':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-slots':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-llm':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-typert-protocol':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-typert-registry':
-        specifier: ^0.1.2-rc.1
+        specifier: ^0.1.2-rc.1 || ^0.2.0-rc.2
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/schemastery':
         specifier: ^3.18.2
